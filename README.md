@@ -2,6 +2,7 @@
 
 > A protected super admin account for Laravel — designed for vendor-deployed applications where the customer admins shouldn't accidentally (or casually) wipe the account the vendor needs for support.
 
+[![Tests](https://github.com/Codenzia/laravel-superadmin/actions/workflows/tests.yml/badge.svg)](https://github.com/Codenzia/laravel-superadmin/actions/workflows/tests.yml)
 [![PHP Version](https://img.shields.io/badge/php-%5E8.3-blue.svg)](https://www.php.net/)
 [![Laravel](https://img.shields.io/badge/laravel-%5E11.0%20%7C%20%5E12.0-red.svg)](https://laravel.com/)
 [![Filament](https://img.shields.io/badge/filament-%5E4.0-orange.svg)](https://filamentphp.com/)
