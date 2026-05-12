@@ -474,7 +474,41 @@ class UserPolicy
 
 ### Idempotent seeder
 
-If you want the protected account auto-restored on every deploy (so a customer who manually deletes the DB row gets it back on the next migration):
+If you want the protected account auto-restored on every deploy (so a customer who manually deletes the DB row gets it back on the next migration), or just want a dev-mode super admin in your `db:seed` flow, call `SuperAdmin::install()` from a seeder. The facade is the single primitive — use it from wherever fits your project.
+
+**Pattern A — Inline in your existing `DatabaseSeeder`** (most common; the seeder is already creating roles + dev users)
+
+```php
+namespace Database\Seeders;
+
+use Codenzia\SuperAdmin\Facades\SuperAdmin;
+use Illuminate\Database\Seeder;
+use Spatie\Permission\Models\Role;
+
+class DatabaseSeeder extends Seeder
+{
+    public function run(): void
+    {
+        // 1. Create your roles first — install() will assign super_admin to the user.
+        Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
+        Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
+
+        // 2. Install the protected super admin.
+        //    Sets is_protected = true, hashes the password, assigns the role.
+        $superAdmin = SuperAdmin::install('dev-password-123', 'superadmin@your-app.test', 'Super Admin');
+
+        // 3. Apply project-specific fields the package doesn't know about.
+        //    (The observer allows updates as long as you don't change email or
+        //    flip is_protected to false.)
+        $superAdmin->update(['status' => 'approved']);
+
+        // 4. Continue with the rest of your seeders (regular admin, agents, etc.)
+        // ...
+    }
+}
+```
+
+**Pattern B — Dedicated `SuperAdminSeeder`** (when production deploys must auto-restore the account if deleted)
 
 ```php
 namespace Database\Seeders;
@@ -487,19 +521,21 @@ class SuperAdminSeeder extends Seeder
     public function run(): void
     {
         if (! SuperAdmin::isConfigured()) {
+            $this->command?->warn('superadmin.email is not configured. Skipping.');
+
             return;
         }
 
         if (SuperAdmin::exists()) {
-            return; // already there, nothing to do
+            return; // already there, idempotent no-op
         }
 
         $password = env('SUPER_ADMIN_SEEDER_PASSWORD');
 
         if (! is_string($password) || strlen($password) < 12) {
             $this->command?->warn(
-                'SUPER_ADMIN_SEEDER_PASSWORD not set — skipping seeder. '
-                .'Run `php artisan superadmin:install` manually instead.'
+                'SUPER_ADMIN_SEEDER_PASSWORD is not set or too short. '
+                .'Run `php artisan superadmin:install --confirm` manually instead.'
             );
 
             return;
@@ -510,7 +546,29 @@ class SuperAdminSeeder extends Seeder
 }
 ```
 
-> ⚠️ The seeder is **optional** and has tradeoffs. If you choose to use it, the password must live in `.env`. If you prefer that the account only ever be created by an explicit human invocation of `superadmin:install`, skip the seeder.
+Call it from `DatabaseSeeder::run()`:
+
+```php
+$this->call(SuperAdminSeeder::class);
+```
+
+#### Password sources by environment
+
+| Environment | Recommended source |
+|---|---|
+| Local dev | A hardcoded `'superadmin'` or similar in the seeder is fine. Convenient and matches everyone's expectations. |
+| Staging | `env('SUPER_ADMIN_SEEDER_PASSWORD')` populated by your deploy pipeline. |
+| Production | **Do not seed.** Run `php artisan superadmin:install --confirm` once, interactively, with a real password. The seeder is for non-prod environments. |
+
+#### What `SuperAdmin::install()` does
+
+- Creates or updates the user identified by the configured email (or the email you pass as the second argument)
+- Sets `is_protected = true`
+- Hashes the password
+- Sets `email_verified_at = now()` on creation only (preserves it on update)
+- Returns the `User` model so you can chain project-specific updates (e.g., `->update(['status' => 'approved'])`)
+- Automatically calls `assignRole()` if the User model has Spatie's `HasRoles` trait and `superadmin.role` is set
+- Reports the role-assignment outcome — see `SuperAdmin::assignRole($user)` if you want the explicit result enum
 
 ### Filament v4 panel
 

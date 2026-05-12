@@ -1,6 +1,6 @@
 {
     "name": "codenzia/laravel-superadmin",
-    "description": "Protected super admin account with break-glass CLI recovery for Laravel. Idempotent install, hashed recovery secret, defense-in-depth observer, rate-limited recovery, optional Filament v4 integration.",
+    "description": "Protected super admin account for Laravel. Zero-config authorization via Gate::before, defense-in-depth Eloquent observer, optional Filament v4 plugin, vendor-only CLI commands with friction controls. Designed for vendor-deployed applications where customer admins must not accidentally delete the vendor's support account.",
     "keywords": [
         "codenzia",
         "laravel",
