@@ -570,6 +570,24 @@ $this->call(SuperAdminSeeder::class);
 - Automatically calls `assignRole()` if the User model has Spatie's `HasRoles` trait and `superadmin.role` is set
 - Reports the role-assignment outcome — see `SuperAdmin::assignRole($user)` if you want the explicit result enum
 
+#### After the seeder runs — also set `SUPER_ADMIN_EMAIL` in `.env`
+
+The seeder writes `is_protected = true` to the database, which is enough on its own for the observer + Gate::before to identify and protect the account. **However**, you should still add this line to `.env`:
+
+```ini
+SUPER_ADMIN_EMAIL=superadmin@your-app.test
+```
+
+Three reasons:
+
+| Reason | What it gives you |
+|---|---|
+| **Defense in depth** | If someone runs raw SQL to flip `is_protected = false`, the email-match path in `SuperAdmin::is()` still identifies the protected user — both signals must be tampered with to silently disable protection. |
+| **Vendor commands** | `superadmin:install`, `superadmin:reset`, and `superadmin:assign-role` all require this env var to know which account they operate on. |
+| **Doctor diagnostics** | `superadmin:doctor` verifies the email matches the protected row and exits non-zero if they're out of sync. |
+
+(The `superadmin:install` command writes this env var automatically when *it* installs the account — only the seeder flow requires you to add it manually.)
+
 ### Filament v4 panel
 
 ```php

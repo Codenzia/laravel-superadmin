@@ -90,6 +90,20 @@ it('fails when the configured role is not assigned to the protected user', funct
         ->assertExitCode(1);
 });
 
+it('detects the protected user via is_protected even when SUPER_ADMIN_EMAIL is not set', function (): void {
+    // Simulates the seeder-only flow: the row has is_protected = true but
+    // the env var was not added. Doctor must NOT report "No protected user
+    // found" (that was a bug); it must still flag the missing env var.
+    config()->set('superadmin.email', null);
+    createProtectedSuperAdmin('seeded@aqarkom.test');
+    config()->set('superadmin.notifications.mail_to', 'x@y.test');
+
+    $this->artisan('superadmin:doctor')
+        ->expectsOutputToContain('SUPER_ADMIN_EMAIL is not set')
+        ->doesntExpectOutput('  2. No protected user found. Run `php artisan superadmin:install`.')
+        ->assertExitCode(1);
+});
+
 it('passes when the configured role is assigned to the protected user', function (): void {
     UserWithRoles::reset();
     config()->set('auth.providers.users.model', UserWithRoles::class);

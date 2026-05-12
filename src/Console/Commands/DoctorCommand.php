@@ -64,10 +64,10 @@ final class DoctorCommand extends Command
         }
 
         // 5. Protected user exists?
-        $user = null;
-        if ($email !== null && $model !== null) {
-            $user = $manager->user();
-        }
+        // We check via $manager->user(), which honors is_protected = true
+        // even when SUPER_ADMIN_EMAIL is not configured. The protected row
+        // is the canonical signal; email is a secondary fallback.
+        $user = $model !== null ? $manager->user() : null;
 
         if ($user === null) {
             $rows[] = ['Protected user exists', 'NO', '✗'];
