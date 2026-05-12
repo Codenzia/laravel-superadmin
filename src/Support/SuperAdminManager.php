@@ -150,6 +150,14 @@ final class SuperAdminManager
                 $instance = $existing->fresh();
             }
 
+            // Best-effort role assignment. install() is the convenience entry
+            // point used by seeders and direct calls — it should fully wire
+            // the protected account, including assigning the configured role
+            // when Spatie HasRoles is present. Commands that want to surface
+            // the result enum can re-call assignRole() and they will get
+            // AlreadyAssigned on the second call (harmless).
+            $this->assignRole($instance);
+
             return $instance;
         });
     }
@@ -168,7 +176,11 @@ final class SuperAdminManager
                 'is_protected' => true,
             ])->save();
 
-            return $user->fresh();
+            $fresh = $user->fresh();
+
+            $this->assignRole($fresh);
+
+            return $fresh;
         });
     }
 

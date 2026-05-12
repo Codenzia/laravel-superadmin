@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Codenzia\SuperAdmin\Facades\SuperAdmin;
 use Codenzia\SuperAdmin\Support\SuperAdminManager;
 use Codenzia\SuperAdmin\Tests\Fixtures\User;
+use Codenzia\SuperAdmin\Tests\Fixtures\UserWithRoles;
 use Illuminate\Support\Facades\Hash;
 
 it('returns null email when not configured', function (): void {
@@ -146,6 +147,19 @@ it('install() creates the user with is_protected = true when missing', function 
     expect($user->email)->toBe('superadmin@aqarkom.test');
     expect((bool) $user->is_protected)->toBeTrue();
     expect(Hash::check('a-new-password-12345', $user->password))->toBeTrue();
+});
+
+it('install() auto-assigns the configured role when User has HasRoles', function (): void {
+    config()->set('auth.providers.users.model', UserWithRoles::class);
+    config()->set('superadmin.user_model', UserWithRoles::class);
+    config()->set('superadmin.role', 'super_admin');
+    UserWithRoles::reset();
+    UserWithRoles::$rolesInDatabase = ['super_admin'];
+    configureSuperAdmin('superadmin@aqarkom.test');
+
+    $user = SuperAdmin::install('a-password-12345', 'superadmin@aqarkom.test');
+
+    expect($user->hasRole('super_admin'))->toBeTrue();
 });
 
 it('install() updates an existing protected user', function (): void {
