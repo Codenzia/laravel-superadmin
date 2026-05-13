@@ -33,8 +33,8 @@
         "laravel/pint": "^1.0",
         "mockery/mockery": "^1.6",
         "orchestra/testbench": "^9.0 || ^10.0 || ^11.0",
-        "pestphp/pest": "^3.0",
-        "pestphp/pest-plugin-laravel": "^3.0"
+        "pestphp/pest": "^3.0 || ^4.0",
+        "pestphp/pest-plugin-laravel": "^3.0 || ^4.0"
     },
     "suggest": {
         "filament/filament": "Required for the optional Filament v4 or v5 panel integration (hides destructive actions on the protected account)",
