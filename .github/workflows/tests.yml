@@ -17,11 +17,21 @@ jobs:
           - php: 8.3
             laravel: 11.*
             testbench: 9.*
+            filament: 4.*
           - php: 8.3
             laravel: 12.*
             testbench: 10.*
+            filament: 4.*
+          - php: 8.3
+            laravel: 12.*
+            testbench: 10.*
+            filament: 5.*
+          - php: 8.3
+            laravel: 13.*
+            testbench: 11.*
+            filament: 5.*
 
-    name: PHP ${{ matrix.php }} - Laravel ${{ matrix.laravel }}
+    name: PHP ${{ matrix.php }} - Laravel ${{ matrix.laravel }} - Filament ${{ matrix.filament }}
 
     steps:
       - name: Checkout
@@ -43,15 +53,16 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ steps.composer-cache.outputs.dir }}
-          key: ${{ runner.os }}-php${{ matrix.php }}-laravel${{ matrix.laravel }}-${{ hashFiles('composer.json') }}
+          key: ${{ runner.os }}-php${{ matrix.php }}-laravel${{ matrix.laravel }}-filament${{ matrix.filament }}-${{ hashFiles('composer.json') }}
           restore-keys: |
-            ${{ runner.os }}-php${{ matrix.php }}-laravel${{ matrix.laravel }}-
+            ${{ runner.os }}-php${{ matrix.php }}-laravel${{ matrix.laravel }}-filament${{ matrix.filament }}-
 
-      - name: Pin Laravel and Testbench versions
+      - name: Pin Laravel, Testbench, Filament versions
         run: |
           composer require \
             "laravel/framework:${{ matrix.laravel }}" \
             "orchestra/testbench:${{ matrix.testbench }}" \
+            "filament/filament:${{ matrix.filament }}" \
             --no-interaction --no-update --dev
 
       - name: Install Composer dependencies
