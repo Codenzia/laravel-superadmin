@@ -9,11 +9,14 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Hash;
 
 /**
- * Exercises the four authorization modes documented in the README:
- *   1. gate_before=true, assign_role=true  — default (zero-config)
- *   2. gate_before=true, assign_role=false — Gate::before only
- *   3. gate_before=false, assign_role=true — role only (Shield handles auth)
- *   4. gate_before=false, assign_role=false — manual (project owns auth)
+ * Exercises the two authorization modes after the v0.2.0 simplification:
+ *   1. gate_before = true  (default) — Gate::before authorizes everything;
+ *      Spatie role is still best-effort assigned if HasRoles is present.
+ *   2. gate_before = false           — Gate::before disabled; Spatie role
+ *      is still best-effort assigned (caller's own policies must allow).
+ *
+ * The previous orthogonal `assign_role` config flag was removed — role
+ * assignment is always best-effort whenever Spatie HasRoles is present.
  */
 beforeEach(function (): void {
     UserWithRoles::reset();
@@ -26,9 +29,8 @@ beforeEach(function (): void {
     Gate::define('do-anything', fn (): bool => false);
 });
 
-it('mode 1 (default): authorizes via Gate::before AND assigns the role', function (): void {
+it('mode 1 (default): Gate::before authorizes AND role is assigned', function (): void {
     config()->set('superadmin.authorization.gate_before', true);
-    config()->set('superadmin.authorization.assign_role', true);
 
     $user = UserWithRoles::query()->create([
         'name' => 'Admin',
@@ -44,27 +46,8 @@ it('mode 1 (default): authorizes via Gate::before AND assigns the role', functio
     expect(Gate::forUser($user)->allows('do-anything'))->toBeTrue();
 });
 
-it('mode 2 (gate_before only): authorizes without assigning role', function (): void {
-    config()->set('superadmin.authorization.gate_before', true);
-    config()->set('superadmin.authorization.assign_role', false);
-
-    $user = UserWithRoles::query()->create([
-        'name' => 'Admin',
-        'email' => 'superadmin@aqarkom.test',
-        'password' => Hash::make('pw-1234567890'),
-        'is_protected' => true,
-    ]);
-
-    $result = SuperAdmin::assignRole($user);
-
-    expect($result)->toBe(RoleAssignmentResult::Disabled);
-    expect($user->hasRole('super_admin'))->toBeFalse();
-    expect(Gate::forUser($user)->allows('do-anything'))->toBeTrue();
-});
-
-it('mode 3 (role only): assigns role, Gate::before does not authorize', function (): void {
+it('mode 2 (gate_before disabled): role is still assigned, but Gate::before does not authorize', function (): void {
     config()->set('superadmin.authorization.gate_before', false);
-    config()->set('superadmin.authorization.assign_role', true);
 
     $user = UserWithRoles::query()->create([
         'name' => 'Admin',
@@ -80,9 +63,8 @@ it('mode 3 (role only): assigns role, Gate::before does not authorize', function
     expect(Gate::forUser($user)->allows('do-anything'))->toBeFalse();
 });
 
-it('mode 4 (manual): no Gate::before, no role assignment', function (): void {
-    config()->set('superadmin.authorization.gate_before', false);
-    config()->set('superadmin.authorization.assign_role', false);
+it('assignRole() returns NotConfigured when no role is configured', function (): void {
+    config()->set('superadmin.role', null);
 
     $user = UserWithRoles::query()->create([
         'name' => 'Admin',
@@ -91,18 +73,10 @@ it('mode 4 (manual): no Gate::before, no role assignment', function (): void {
         'is_protected' => true,
     ]);
 
-    $result = SuperAdmin::assignRole($user);
-
-    expect($result)->toBe(RoleAssignmentResult::Disabled);
-    expect($user->hasRole('super_admin'))->toBeFalse();
-    expect(Gate::forUser($user)->allows('do-anything'))->toBeFalse();
+    expect(SuperAdmin::assignRole($user))->toBe(RoleAssignmentResult::NotConfigured);
 });
 
-it('superadmin:assign-role command always assigns even when flag is false', function (): void {
-    // assign_role = false means install/reset SKIP role assignment.
-    // But the explicit assign-role command should still honor a user invocation.
-    config()->set('superadmin.authorization.assign_role', false);
-
+it('assignRole() returns AlreadyAssigned on a second call', function (): void {
     $user = UserWithRoles::query()->create([
         'name' => 'Admin',
         'email' => 'superadmin@aqarkom.test',
@@ -110,11 +84,7 @@ it('superadmin:assign-role command always assigns even when flag is false', func
         'is_protected' => true,
     ]);
 
-    expect($user->hasRole('super_admin'))->toBeFalse();
+    SuperAdmin::assignRole($user);
 
-    $this->artisan('superadmin:assign-role', ['--confirm' => true])
-        ->expectsOutputToContain('assigned successfully')
-        ->assertExitCode(0);
-
-    expect($user->fresh()->hasRole('super_admin'))->toBeTrue();
+    expect(SuperAdmin::assignRole($user))->toBe(RoleAssignmentResult::AlreadyAssigned);
 });

@@ -9,6 +9,7 @@ use Illuminate\Contracts\Container\Container;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 use Throwable;
 
 final class SuperAdminManager
@@ -22,6 +23,47 @@ final class SuperAdminManager
         $email = $this->config()->get('superadmin.email');
 
         return is_string($email) && $email !== '' ? mb_strtolower($email) : null;
+    }
+
+    /**
+     * Resolve the email to use when none is explicitly configured.
+     * Three-tier resolution, derived from the host's own app config so the
+     * package never bakes in a vendor domain:
+     *
+     *   1. SUPER_ADMIN_EMAIL (env / config) — if set
+     *   2. superadmin@<host>          — where <host> = parse_url(APP_URL).host
+     *   3. superadmin@<slug>.local    — where <slug> = Str::slug(APP_NAME)
+     */
+    public function defaultEmail(): string
+    {
+        $configured = $this->email();
+        if ($configured !== null) {
+            return $configured;
+        }
+
+        $url = (string) $this->config()->get('app.url', '');
+        $host = $url !== '' ? parse_url($url, PHP_URL_HOST) : null;
+
+        if (is_string($host) && $host !== '') {
+            return 'superadmin@'.mb_strtolower($host);
+        }
+
+        $slug = Str::slug((string) $this->config()->get('app.name', 'app')) ?: 'app';
+
+        return 'superadmin@'.$slug.'.local';
+    }
+
+    /**
+     * The password used when no explicit one is provided. Defaults to the
+     * literal string "superadmin" — deliberately memorable for local dev /
+     * internal use. Vendors deploying to production must override via
+     * SUPER_ADMIN_PASSWORD or `php artisan superadmin:setup`.
+     */
+    public function defaultPassword(): string
+    {
+        $configured = $this->config()->get('superadmin.password');
+
+        return is_string($configured) && $configured !== '' ? $configured : 'superadmin';
     }
 
     /**
@@ -114,11 +156,36 @@ final class SuperAdminManager
     }
 
     /**
-     * Idempotently create or update the protected user with the given
-     * password. Sets is_protected = true. Assigns the configured role if
-     * supported by the User model.
+     * Idempotent get-or-create. Safe to call from seeders, the auto-install
+     * migration hook, and anywhere else that needs "the superadmin must
+     * exist." Returns the existing user untouched if one is present;
+     * otherwise creates it via install() using defaultEmail() +
+     * defaultPassword().
      */
-    public function install(string $password, ?string $email = null, string $name = 'Super Admin'): Model
+    public function ensure(): Model
+    {
+        $existing = $this->user();
+
+        if ($existing !== null) {
+            return $existing;
+        }
+
+        return $this->install($this->defaultPassword(), $this->defaultEmail());
+    }
+
+    /**
+     * Idempotently create or update the protected user.
+     *
+     * Null-handling rules:
+     *  - $email = null  → use defaultEmail() in all cases.
+     *  - $password = null:
+     *      • if creating a new user → use defaultPassword().
+     *      • if updating an existing user → KEEP the current password
+     *        (lets callers like SetupCommand change just the email).
+     *
+     * Sets is_protected = true and assigns the configured role if supported.
+     */
+    public function install(?string $password = null, ?string $email = null, string $name = 'Super Admin'): Model
     {
         $model = $this->userModel();
 
@@ -126,11 +193,7 @@ final class SuperAdminManager
             throw new \RuntimeException('Cannot resolve User model. Configure superadmin.user_model or auth.providers.users.model.');
         }
 
-        $email ??= $this->email();
-
-        if ($email === null) {
-            throw new \RuntimeException('SUPER_ADMIN_EMAIL is not configured.');
-        }
+        $email ??= $this->defaultEmail();
 
         return $this->withoutProtection(function () use ($model, $email, $password, $name): Model {
             $existing = $this->user();
@@ -138,55 +201,33 @@ final class SuperAdminManager
             $attributes = [
                 'name' => $name,
                 'email' => $email,
-                'password' => Hash::make($password),
                 'is_protected' => true,
             ];
 
             if ($existing === null) {
+                $attributes['password'] = Hash::make($password ?? $this->defaultPassword());
                 $attributes['email_verified_at'] = now();
                 $instance = $model::query()->create($attributes);
             } else {
+                if ($password !== null) {
+                    $attributes['password'] = Hash::make($password);
+                }
                 $existing->fill($attributes)->save();
                 $instance = $existing->fresh();
             }
 
-            // Best-effort role assignment. install() is the convenience entry
-            // point used by seeders and direct calls — it should fully wire
-            // the protected account, including assigning the configured role
-            // when Spatie HasRoles is present. Commands that want to surface
-            // the result enum can re-call assignRole() and they will get
-            // AlreadyAssigned on the second call (harmless).
+            // Best-effort role assignment — fires whenever Spatie HasRoles is
+            // present on the User model and a role is configured.
             $this->assignRole($instance);
 
             return $instance;
         });
     }
 
-    public function resetPassword(string $password): Model
-    {
-        $user = $this->user();
-
-        if ($user === null) {
-            throw new \RuntimeException('Protected super admin does not exist. Run `php artisan superadmin:install` first.');
-        }
-
-        return $this->withoutProtection(function () use ($user, $password): Model {
-            $user->fill([
-                'password' => Hash::make($password),
-                'is_protected' => true,
-            ])->save();
-
-            $fresh = $user->fresh();
-
-            $this->assignRole($fresh);
-
-            return $fresh;
-        });
-    }
-
     /**
      * Bypass the deletion / email-change / flag-change protection for the
-     * duration of a callback. Used internally by install() and resetPassword().
+     * duration of a callback. Used internally by install(), and exposed
+     * for SetupCommand (which updates the protected row's password / email).
      *
      * @template T
      *
@@ -219,18 +260,10 @@ final class SuperAdminManager
 
     /**
      * Attempt to assign the configured role to the user. Returns a result
-     * enum describing what happened. The $respectFlag parameter controls
-     * whether to honor superadmin.authorization.assign_role:
-     *   - true (default): used by install/reset for automatic assignment
-     *   - false: used by the explicit superadmin:assign-role command,
-     *     which always attempts assignment regardless of the flag
+     * enum describing what happened. Best-effort: never throws.
      */
-    public function assignRole(Model $user, bool $respectFlag = true): RoleAssignmentResult
+    public function assignRole(Model $user): RoleAssignmentResult
     {
-        if ($respectFlag && ! (bool) $this->config()->get('superadmin.authorization.assign_role', true)) {
-            return RoleAssignmentResult::Disabled;
-        }
-
         $role = $this->configuredRole();
 
         if ($role === null) {

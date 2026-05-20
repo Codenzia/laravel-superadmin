@@ -55,6 +55,9 @@ abstract class TestCase extends Orchestra
         $app['config']->set('app.name', 'Codenzia SuperAdmin Tests');
         $app['config']->set('app.url', 'https://aqarkom.test');
 
-        $app['config']->set('superadmin.vendor_commands.require_typed_phrase', false);
+        // Tests opt out of auto-install — most cases set up explicit state
+        // and the migration-event handler would race with that. Individual
+        // tests that exercise the hook re-enable it locally.
+        $app['config']->set('superadmin.auto_install', false);
     }
 }

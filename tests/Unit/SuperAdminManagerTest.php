@@ -173,19 +173,103 @@ it('install() updates an existing protected user', function (): void {
     expect((bool) $user->is_protected)->toBeTrue();
 });
 
-it('resetPassword() rotates the password on the existing user', function (): void {
-    configureSuperAdmin();
-    createProtectedSuperAdmin('superadmin@aqarkom.test', 'original-pw-12345');
+// ---------------------------------------------------------------------------
+// ensure() — idempotent get-or-create (v0.2.0 seeder-safe API)
+// ---------------------------------------------------------------------------
 
-    SuperAdmin::resetPassword('rotated-pw-98765!');
+it('ensure() creates the superadmin from defaults when none exists', function (): void {
+    config()->set('superadmin.email', null); // no explicit configured email
+    config()->set('app.url', 'https://myshop.test');
 
-    $user = SuperAdmin::user();
-    expect(Hash::check('rotated-pw-98765!', $user->password))->toBeTrue();
+    $user = SuperAdmin::ensure();
+
+    expect($user->email)->toBe('superadmin@myshop.test');
+    expect((bool) $user->is_protected)->toBeTrue();
+    expect(Hash::check('superadmin', $user->password))->toBeTrue();
 });
 
-it('resetPassword() throws if no protected user exists', function (): void {
-    configureSuperAdmin();
+it('ensure() returns the existing superadmin untouched without re-hashing the password', function (): void {
+    configureSuperAdmin('superadmin@aqarkom.test');
+    $original = createProtectedSuperAdmin('superadmin@aqarkom.test', 'do-not-rotate-me');
+    $originalHash = $original->password;
 
-    expect(fn () => SuperAdmin::resetPassword('any-password-12345'))
-        ->toThrow(RuntimeException::class);
+    $returned = SuperAdmin::ensure();
+
+    expect($returned->getKey())->toBe($original->getKey());
+    expect($returned->password)->toBe($originalHash); // unchanged
+    expect(Hash::check('do-not-rotate-me', $returned->password))->toBeTrue();
+});
+
+it('ensure() is idempotent across repeated calls', function (): void {
+    configureSuperAdmin('superadmin@aqarkom.test');
+
+    $a = SuperAdmin::ensure();
+    $b = SuperAdmin::ensure();
+    $c = SuperAdmin::ensure();
+
+    expect($a->getKey())->toBe($b->getKey())->toBe($c->getKey());
+    expect(User::query()->where('is_protected', true)->count())->toBe(1);
+});
+
+// ---------------------------------------------------------------------------
+// defaultEmail() — three-tier app-config-derived resolution
+// ---------------------------------------------------------------------------
+
+it('defaultEmail() prefers SUPER_ADMIN_EMAIL when set', function (): void {
+    config()->set('superadmin.email', 'CUSTOM@example.test');
+
+    expect(SuperAdmin::defaultEmail())->toBe('custom@example.test');
+});
+
+it('defaultEmail() derives from APP_URL host when email is unset', function (): void {
+    config()->set('superadmin.email', null);
+    config()->set('app.url', 'https://MyShop.example.com:8080/path');
+
+    expect(SuperAdmin::defaultEmail())->toBe('superadmin@myshop.example.com');
+});
+
+it('defaultEmail() falls back to app.name slug when no APP_URL host is available', function (): void {
+    config()->set('superadmin.email', null);
+    config()->set('app.url', '');
+    config()->set('app.name', 'My Awesome Shop');
+
+    expect(SuperAdmin::defaultEmail())->toBe('superadmin@my-awesome-shop.local');
+});
+
+it('defaultEmail() never bakes in a vendor domain', function (): void {
+    config()->set('superadmin.email', null);
+    config()->set('app.url', null);
+    config()->set('app.name', null);
+
+    $email = SuperAdmin::defaultEmail();
+
+    expect($email)->toEndWith('.local')
+        ->and($email)->not->toContain('codenzia');
+});
+
+// ---------------------------------------------------------------------------
+// defaultPassword() — literal "superadmin" by default, env-overridable
+// ---------------------------------------------------------------------------
+
+it('defaultPassword() returns the literal "superadmin" when unset', function (): void {
+    config()->set('superadmin.password', null);
+
+    expect(SuperAdmin::defaultPassword())->toBe('superadmin');
+});
+
+it('defaultPassword() honors SUPER_ADMIN_PASSWORD', function (): void {
+    config()->set('superadmin.password', 'my-real-pw');
+
+    expect(SuperAdmin::defaultPassword())->toBe('my-real-pw');
+});
+
+it('install() with no arguments uses defaultEmail() + defaultPassword()', function (): void {
+    config()->set('superadmin.email', null);
+    config()->set('app.url', 'https://aqarkom.test');
+    config()->set('superadmin.password', null);
+
+    $user = SuperAdmin::install();
+
+    expect($user->email)->toBe('superadmin@aqarkom.test');
+    expect(Hash::check('superadmin', $user->password))->toBeTrue();
 });
