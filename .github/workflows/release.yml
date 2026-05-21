@@ -1,0 +1,18 @@
+name: release
+
+# Tag-triggered release. This repo is public (no -dev mirror), so the
+# workflow just creates a GitHub Release on this same repo from the tag.
+# Packagist auto-detects the new tag via its webhook.
+#
+# Cut a release by tagging on main:
+#   git tag -a v0.3.0 -m "Release v0.3.0"
+#   git push origin v0.3.0
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  release:
+    uses: Codenzia/plugin-runtime/.github/workflows/plugin-release.yml@main
+    secrets: inherit

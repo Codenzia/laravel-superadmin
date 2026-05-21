@@ -1,5 +1,8 @@
 name: tests
 
+# Thin caller — delegates to the reusable workflow in Codenzia/plugin-runtime.
+# Edit there to change matrix versions / Pint behavior across all plugins.
+
 on:
   push:
     branches: [main]
@@ -8,86 +11,4 @@ on:
 
 jobs:
   tests:
-    runs-on: ubuntu-latest
-
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - php: 8.3
-            laravel: 11.*
-            testbench: 9.*
-            filament: 4.*
-          - php: 8.3
-            laravel: 12.*
-            testbench: 10.*
-            filament: 4.*
-          - php: 8.3
-            laravel: 12.*
-            testbench: 10.*
-            filament: 5.*
-          - php: 8.3
-            laravel: 13.*
-            testbench: 11.*
-            filament: 5.*
-
-    name: PHP ${{ matrix.php }} - Laravel ${{ matrix.laravel }} - Filament ${{ matrix.filament }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup PHP
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: ${{ matrix.php }}
-          extensions: mbstring, dom, fileinfo, sqlite, pdo_sqlite, sodium
-          tools: composer:v2
-          coverage: none
-
-      - name: Resolve composer cache directory
-        id: composer-cache
-        run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
-
-      - name: Cache composer dependencies
-        uses: actions/cache@v4
-        with:
-          path: ${{ steps.composer-cache.outputs.dir }}
-          key: ${{ runner.os }}-php${{ matrix.php }}-laravel${{ matrix.laravel }}-filament${{ matrix.filament }}-${{ hashFiles('composer.json') }}
-          restore-keys: |
-            ${{ runner.os }}-php${{ matrix.php }}-laravel${{ matrix.laravel }}-filament${{ matrix.filament }}-
-
-      - name: Pin Laravel, Testbench, Filament versions
-        run: |
-          composer require \
-            "laravel/framework:${{ matrix.laravel }}" \
-            "orchestra/testbench:${{ matrix.testbench }}" \
-            "filament/filament:${{ matrix.filament }}" \
-            --no-interaction --no-update --dev
-
-      - name: Install Composer dependencies
-        run: composer update --prefer-stable --prefer-dist --no-interaction
-
-      - name: Execute tests
-        run: vendor/bin/pest --compact
-
-  code-style:
-    runs-on: ubuntu-latest
-    name: Pint
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup PHP
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: 8.3
-          tools: composer:v2
-          coverage: none
-
-      - name: Install Composer dependencies
-        run: composer install --prefer-dist --no-interaction --no-progress
-
-      - name: Check code style
-        run: vendor/bin/pint --test --format agent
+    uses: Codenzia/plugin-runtime/.github/workflows/plugin-tests.yml@main

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Codenzia\SuperAdmin\Facades\SuperAdmin;
 use Codenzia\SuperAdmin\Tests\Fixtures\User;
+use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Hash;
 
 beforeEach(function (): void {
@@ -65,7 +66,7 @@ it('rejects an invalid email', function (): void {
     $this->artisan('superadmin:setup', [
         '--email' => 'not-an-email',
         '--password' => 'whatever',
-    ])->assertExitCode(\Illuminate\Console\Command::INVALID);
+    ])->assertExitCode(Command::INVALID);
 
     expect(SuperAdmin::user())->toBeNull();
 });
