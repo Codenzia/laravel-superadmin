@@ -12,10 +12,6 @@ final class SuperAdminObserver
 {
     public function deleting(Model $user): void
     {
-        if (! config('superadmin.protection.block_delete', true)) {
-            return;
-        }
-
         if (SuperAdmin::isProtectionBypassed()) {
             return;
         }
@@ -31,7 +27,7 @@ final class SuperAdminObserver
             return;
         }
 
-        if (config('superadmin.protection.block_email_change', true) && $user->isDirty('email')) {
+        if ($user->isDirty('email')) {
             $original = $user->getOriginal('email');
             $configured = SuperAdmin::email();
             $wasProtected = (bool) $user->getOriginal('is_protected');
@@ -42,12 +38,16 @@ final class SuperAdminObserver
             }
         }
 
-        if (config('superadmin.protection.block_flag_change', true) && $user->isDirty('is_protected')) {
+        if ($user->isDirty('is_protected')) {
             $wasProtected = (bool) $user->getOriginal('is_protected');
             $isProtected = (bool) $user->getAttribute('is_protected');
 
             if ($wasProtected && ! $isProtected) {
                 throw ProtectedAccountException::cannotUnprotect();
+            }
+
+            if (! $wasProtected && $isProtected) {
+                throw ProtectedAccountException::cannotProtect();
             }
         }
     }

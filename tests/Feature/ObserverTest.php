@@ -41,6 +41,16 @@ it('blocks flipping is_protected from true to false', function (): void {
     expect(fn () => $user->save())->toThrow(ProtectedAccountException::class);
 });
 
+it('blocks flipping is_protected from false to true on a regular user', function (): void {
+    $user = createUser('attacker@aqarkom.test');
+
+    $user->is_protected = true;
+
+    expect(fn () => $user->save())->toThrow(ProtectedAccountException::class);
+
+    expect((bool) $user->fresh()->is_protected)->toBeFalse();
+});
+
 it('allows password changes on the protected super admin', function (): void {
     $user = createProtectedSuperAdmin();
     $original = $user->password;
@@ -88,31 +98,19 @@ it('withoutProtection allows email change', function (): void {
     expect($user->fresh()->email)->toBe('temporarily-different@aqarkom.test');
 });
 
-it('respects the protection.block_delete config flag', function (): void {
-    config()->set('superadmin.protection.block_delete', false);
-    $user = createProtectedSuperAdmin();
+it('withoutProtection allows promoting a regular user to protected', function (): void {
+    $user = createUser('promoted@aqarkom.test');
 
-    $user->delete();
+    SuperAdmin::withoutProtection(function () use ($user): void {
+        $user->is_protected = true;
+        $user->save();
+    });
 
-    expect($user->fresh())->toBeNull();
+    expect((bool) $user->fresh()->is_protected)->toBeTrue();
 });
 
-it('respects the protection.block_email_change config flag', function (): void {
-    config()->set('superadmin.protection.block_email_change', false);
-    $user = createProtectedSuperAdmin();
+it('creating a user with is_protected = true is allowed (insert, not update)', function (): void {
+    $user = createProtectedSuperAdmin('seeded@aqarkom.test');
 
-    $user->email = 'changed@aqarkom.test';
-    $user->save();
-
-    expect($user->fresh()->email)->toBe('changed@aqarkom.test');
-});
-
-it('respects the protection.block_flag_change config flag', function (): void {
-    config()->set('superadmin.protection.block_flag_change', false);
-    $user = createProtectedSuperAdmin();
-
-    $user->is_protected = false;
-    $user->save();
-
-    expect((bool) $user->fresh()->is_protected)->toBeFalse();
+    expect((bool) $user->fresh()->is_protected)->toBeTrue();
 });

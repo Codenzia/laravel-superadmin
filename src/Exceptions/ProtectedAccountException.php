@@ -22,4 +22,12 @@ final class ProtectedAccountException extends RuntimeException
     {
         return new self('The is_protected flag cannot be set to false on the super admin account.');
     }
+
+    public static function cannotProtect(): self
+    {
+        return new self(
+            'The is_protected flag cannot be promoted to true outside of SuperAdmin::withoutProtection(). '
+            .'This guards against mass-assignment privilege escalation on regular accounts.'
+        );
+    }
 }

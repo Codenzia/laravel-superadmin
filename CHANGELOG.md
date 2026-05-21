@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- **Block `is_protected: false → true` promotion via Eloquent update.** `SuperAdminObserver::updating()` now throws `ProtectedAccountException::cannotProtect()` when a regular user's `is_protected` flag is flipped to `true` outside of `SuperAdmin::withoutProtection()`. Previously the observer only blocked the downgrade direction (`true → false`), so a consumer app that placed `is_protected` inside the User model's `$fillable` was vulnerable to mass-assignment privilege escalation — an attacker submitting `is_protected=true` on a profile-update payload could mark themselves as the protected super admin and become un-deletable.
+  - **Impact**: every consumer app gains defense-in-depth without code changes. Existing callers that legitimately promote users to protected (custom admin tools, seeders) must wrap the update in `SuperAdmin::withoutProtection(fn () => $user->update(['is_protected' => true]))`. The package's own `install()` / `ensure()` flow already does this.
+  - **Note**: `insert` (creating a new user with `is_protected=true` directly) is still allowed — only `update` is gated. Seeders and `User::factory()->create(['is_protected' => true])` continue to work.
+  - Consumer apps are still encouraged to keep `is_protected` out of `$fillable` as belt-and-suspenders.
+
+### Fixed
+- **Observer no longer reads removed config keys.** `SuperAdminObserver` was still reading `superadmin.protection.block_delete`, `protection.block_email_change`, and `protection.block_flag_change` — keys that were removed from the published config file in 0.3.0 but never deleted from the observer code. The granular gates worked only by accident (each `config()` call defaulted to `true`). They are now gone; the single `protection.enabled` switch (gated in the service provider's `registerObserver()`) is the only lever, as documented.
+
+### Tests
+- New: "blocks flipping is_protected from false to true on a regular user", "withoutProtection allows promoting a regular user to protected", "creating a user with is_protected = true is allowed (insert, not update)".
+- Removed: 3 tests that exercised the stale `protection.block_*` granular config keys.
+
 ## [0.3.0] - 2026-05-20
 
 **Zero-friction redesign.** Composer require + `php artisan migrate` now produces a working protected super admin — no ceremony, no `--confirm`, no typed phrase, no vendor notifications. This is a breaking-change release; see "Upgrading from 0.2.x" in the README for the per-app migration steps.
