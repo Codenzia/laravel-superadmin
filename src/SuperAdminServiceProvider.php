@@ -48,6 +48,7 @@ final class SuperAdminServiceProvider extends ServiceProvider
         $this->registerObserver();
         $this->registerGateBefore();
         $this->registerAutoInstall();
+        $this->registerLateRoleAssignment();
     }
 
     private function registerObserver(): void
@@ -145,5 +146,88 @@ final class SuperAdminServiceProvider extends ServiceProvider
                 fwrite(STDOUT, '    Override anytime with `php artisan superadmin:setup` or by editing .env.'.PHP_EOL);
             }
         });
+    }
+
+    /**
+     * Retroactively assign the configured role to the protected super admin
+     * the moment that role is created in the database.
+     *
+     * Solves a real race: `MigrationsEnded` fires during `migrate`, which
+     * is *before* any seeder runs. If spatie/laravel-permission is in use,
+     * the Role row for `super_admin` doesn't exist yet at that point, so
+     * `install()`'s best-effort assignRole() silently fails. Without this
+     * listener the protected user never gets the role, even though both
+     * the role and the user exist by the end of `migrate --seed`.
+     *
+     * Implemented as an Eloquent wildcard listener (`eloquent.created: *`)
+     * so the role model class is resolved lazily at event time. That lets
+     * host apps swap `permission.models.role` without re-booting the
+     * provider, and lets the package keep working when Spatie is not
+     * installed at all (the listener body short-circuits early).
+     *
+     * Idempotent: if the user already has the role, the call is a no-op.
+     * Never throws — assignRole() is best-effort and swallows failures.
+     *
+     * Disabled via `superadmin.late_role_assignment = false` for hosts
+     * that want strict control.
+     */
+    private function registerLateRoleAssignment(): void
+    {
+        Event::listen('eloquent.created: *', function (string $event, array $payload): void {
+            if (! (bool) $this->app['config']->get('superadmin.late_role_assignment', true)) {
+                return;
+            }
+
+            $model = $payload[0] ?? null;
+            if (! $model instanceof Model) {
+                return;
+            }
+
+            $roleClass = $this->resolveRoleModel();
+            if ($roleClass === null || ! ($model instanceof $roleClass)) {
+                return;
+            }
+
+            $manager = $this->app->make(SuperAdminManager::class);
+
+            $configured = $manager->configuredRole();
+            if ($configured === null) {
+                return;
+            }
+
+            $name = $model->getAttribute('name');
+            if (! is_string($name) || $name !== $configured) {
+                return;
+            }
+
+            $user = $manager->user();
+            if ($user === null) {
+                return;
+            }
+
+            // Best-effort: assignRole() handles "already has it" and
+            // swallows failures (RoleAssignmentResult::Failed). Safe to call.
+            $manager->assignRole($user);
+        });
+    }
+
+    /**
+     * Resolve the Spatie Role model class. Returns null when
+     * spatie/laravel-permission is not installed in the host app, so the
+     * package degrades gracefully.
+     *
+     * @return class-string<Model>|null
+     */
+    private function resolveRoleModel(): ?string
+    {
+        $configured = $this->app['config']->get('permission.models.role');
+
+        if (is_string($configured) && $configured !== '' && class_exists($configured)) {
+            return $configured;
+        }
+
+        $canonical = 'Spatie\\Permission\\Models\\Role';
+
+        return class_exists($canonical) ? $canonical : null;
     }
 }

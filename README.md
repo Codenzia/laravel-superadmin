@@ -14,9 +14,10 @@
 ## What you get
 
 - A **single protected user** that is auto-created on first `migrate`. Default email derived from `APP_URL` / `APP_NAME`. Default password `superadmin`.
-- An **Eloquent observer** that blocks deletion, email changes, and unprotect attempts on that user.
+- An **Eloquent observer** that blocks deletion, email changes, **unprotect attempts (`true → false`)**, and **mass-assignment privilege escalation (`false → true`)** on the `is_protected` flag.
 - A **`Gate::before` hook** so the super admin authorizes for every ability — works without Spatie, Shield, or any policies wired up.
-- A **Filament plugin** that hides `DeleteAction` / `ForceDeleteAction` for the protected row.
+- **Late role assignment.** Solves the `MigrationsEnded` vs Spatie-Role-row race: when `spatie/laravel-permission` is in use, the `super_admin` role row often doesn't exist yet at auto-install time, so the role would silently fail to attach. A wildcard `eloquent.created` listener retroactively assigns the configured role the moment the row appears in a later seeder run. Idempotent and best-effort; no-ops cleanly when Spatie isn't installed.
+- A **Filament plugin** that hides destructive row actions (`delete`, `suspend`, `ban`, `impersonate`, …) and disables privileged form fields (`roles`, `status`, `email`, …) on the protected user row — automatically, across every consumer app, with no per-resource code.
 - A **`superadmin:setup` command** that interactively rotates the email + password, persisting both to `.env` and the DB.
 - A **`superadmin:status` command** (with `--verbose` for full health diagnostics) so you can verify the install in one shot.
 
@@ -78,15 +79,32 @@ The package identifies the protected row via **either** signal — both must be 
 - `users.is_protected = true` (DB column)
 - `users.email` matching `SUPER_ADMIN_EMAIL` (or the derived default)
 
-Three protection layers:
+Four protection layers — each independent, so tampering with one doesn't silently disable the others:
 
 | Layer | Behavior |
 |---|---|
-| Eloquent observer | Throws `ProtectedAccountException` on delete, email change, and `is_protected → false` |
+| Eloquent observer | Throws `ProtectedAccountException` on **delete**, **email change**, **unprotect (`true → false`)**, and **promote (`false → true` outside `withoutProtection()`)**. The last is what blocks mass-assignment escalation when a consumer app puts `is_protected` in `$fillable`. |
 | `Gate::before` | Returns `true` for the protected user on every `can()` / policy / `@can` check — no Spatie or Shield required |
-| Filament plugin | Hides `DeleteAction` and `ForceDeleteAction` on the protected user |
+| Filament plugin (UX layer) | Auto-hides destructive row actions (`delete`, `suspend`, `ban`, `impersonate`, …) and auto-disables privileged form fields (`roles`, `status`, `email`, `is_protected`, …) on the protected user row. Zero per-resource code. See [Filament](#filament) below. |
+| Late role assignment | Wildcard `eloquent.created` listener that retroactively assigns the configured role to the protected user the moment the role row exists (typically after `migrate --seed`). |
 
 The observer is defense-in-depth. Use the facade in your policies for proper HTTP 403s (see [UserPolicy](#userpolicy) below).
+
+### App-side defense-in-depth (recommended)
+
+Even with the observer guarding `false → true` promotion, you should keep `is_protected` out of the User model's `$fillable`. The observer only fires on `update`, and only inside Eloquent — raw `DB::table('users')->update(...)` calls bypass it. The two-layer pattern:
+
+```php
+class User extends Authenticatable
+{
+    use IsSuperAdmin;
+
+    // is_protected is intentionally NOT fillable. Only the package's
+    // SuperAdmin::install() / SuperAdmin::ensure() (which wrap the
+    // assignment in SuperAdmin::withoutProtection()) may set it.
+    protected $fillable = ['name', 'email', 'password', 'phone', 'slug'];
+}
+```
 
 ## Commands
 
@@ -110,18 +128,36 @@ php artisan superadmin:status
 
 ## Configuration
 
-The package config is intentionally tiny. After `php artisan vendor:publish --tag=superadmin-config`:
+The package config is small. After `php artisan vendor:publish --tag=superadmin-config`:
 
 ```php
 return [
-    'email'         => env('SUPER_ADMIN_EMAIL'),
-    'password'      => env('SUPER_ADMIN_PASSWORD', 'superadmin'),
-    'user_model'    => null,                                          // null = resolved from auth.providers
-    'role'          => env('SUPER_ADMIN_ROLE', 'super_admin'),
-    'auto_install'  => env('SUPER_ADMIN_AUTO_INSTALL', true),         // create user on MigrationsEnded
-    'authorization' => ['gate_before' => true],                       // super admin passes every can()
-    'protection'    => ['enabled' => true],                           // observer + Filament action hiding
-    'filament'      => ['hide_destructive_actions' => true],
+    'email'                 => env('SUPER_ADMIN_EMAIL'),
+    'password'              => env('SUPER_ADMIN_PASSWORD', 'superadmin'),
+    'user_model'            => null,                                              // null = resolved from auth.providers
+    'role'                  => env('SUPER_ADMIN_ROLE', 'super_admin'),
+    'auto_install'          => env('SUPER_ADMIN_AUTO_INSTALL', true),             // create user on MigrationsEnded
+    'authorization'         => ['gate_before' => true],                           // super admin passes every can()
+    'protection'            => ['enabled' => env('SUPER_ADMIN_PROTECTION', true)],
+    'late_role_assignment'  => env('SUPER_ADMIN_LATE_ROLE_ASSIGNMENT', true),     // attach role when row appears later
+    'filament' => [
+        'hide_destructive_actions' => true,                                       // master switch for the Filament plugin
+
+        // Row actions auto-hidden on the protected user row. Apps extend by
+        // merging their own entries — see "Filament" section below.
+        'hidden_action_names' => [
+            'delete', 'forceDelete',
+            'suspend', 'unsuspend', 'ban', 'unban',
+            'markEmailVerified', 'verify', 'unverify',
+            'impersonate', 'demote',
+        ],
+
+        // Form fields auto-disabled when editing the protected user.
+        'locked_field_names' => [
+            'roles', 'role', 'permissions',
+            'status', 'is_protected', 'email', 'user_type',
+        ],
+    ],
 ];
 ```
 
@@ -207,6 +243,30 @@ use Codenzia\SuperAdmin\Filament\SuperAdminPlugin;
 $panel->plugin(SuperAdminPlugin::make());
 ```
 
+The plugin registers three defense-in-depth UX layers on the protected user row, all toggleable via `config/superadmin.php` and active by default:
+
+1. **`DeleteAction` / `ForceDeleteAction` auto-hide** — original behavior. Admins never see a button that would only error at the observer layer.
+2. **Custom destructive row actions auto-hide.** Any `Filament\Actions\Action` whose `getName()` is in `filament.hidden_action_names` is hidden on the protected user. The default list catches the verbs we ship across our consumer apps: `delete`, `forceDelete`, `suspend`, `unsuspend`, `ban`, `unban`, `markEmailVerified`, `verify`, `unverify`, `impersonate`, `demote`.
+3. **Privileged form fields auto-disable.** Any `Filament\Forms\Components\Field` whose `getName()` is in `filament.locked_field_names` is disabled when the form's record is the super admin. Default list: `roles`, `role`, `permissions`, `status`, `is_protected`, `email`, `user_type`. Closes the "admin demotes the super admin via the roles Select" loophole.
+
+Apps extend the defaults via config, no code:
+
+```php
+// config/superadmin.php
+'filament' => [
+    'hidden_action_names' => [
+        ...config('superadmin.filament.hidden_action_names'),
+        'my_app_specific_destructive_action',
+    ],
+    'locked_field_names' => [
+        ...config('superadmin.filament.locked_field_names'),
+        'my_app_specific_privileged_field',
+    ],
+],
+```
+
+> **Caveat.** Filament's `->hidden()` and `->disabled()` setters *replace* prior conditions (they don't AND/OR). If app code chains an explicit `->hidden(false)` *after* construction, the package's auto-hide is overridden. Apps that rely on `->visible(fn () => ...)` for conditional showing (the common pattern) are unaffected because `visible` and `hidden` are separate fields and an action is hidden when *either* hides it.
+
 To also hide the protected row from non-super-admin viewers:
 
 ```php
@@ -230,6 +290,14 @@ public static function getEloquentQuery(): Builder
 | **Role-only** | `false` | Package only assigns the configured role. Authorization is delegated to your project (typically Filament Shield's own `Gate::before`). |
 
 The package never creates the role row, defines permissions, or installs Shield — those remain your project's responsibility. In default mode, you don't need any of them: `Gate::before` covers authorization on its own.
+
+## What's new since 0.3.0
+
+**0.3.2 (2026-05-22).** Adds **late role assignment** for the `MigrationsEnded`-vs-Spatie-Role-row race, and **Filament auto-lock** for the protected user row: every consumer app now auto-hides destructive row actions and auto-disables privileged form fields with no per-resource code. New config keys: `late_role_assignment`, `filament.hidden_action_names`, `filament.locked_field_names`. Tests grew from 84 to 105.
+
+**0.3.1 (2026-05-21).** **Security:** the observer now blocks `is_protected: false → true` promotion via Eloquent update (mass-assignment privilege escalation defense). Previously only the downgrade direction was guarded. Also cleans up three stale `protection.block_*` config reads that were documented as removed in 0.3.0 but never deleted from the observer code.
+
+See [CHANGELOG.md](CHANGELOG.md) for the full release notes.
 
 ## Upgrading from 0.2.x
 
@@ -265,7 +333,7 @@ v0.3.0 is a **clean break**. The vendor-friction model is gone. Per-app upgrade:
 
 ## Testing
 
-84 Pest tests, 149 assertions. Covers the manager, observer, Gate::before, the `MigrationsEnded` hook, the setup command, the env writer, and the Filament plugin's authorization mode matrix.
+**105 Pest tests, 173 assertions.** Covers the manager, the observer (delete + email + unprotect + promote-escalation), Gate::before, the `MigrationsEnded` auto-install hook, the late-role-assignment listener, the setup command, the env writer, and the Filament plugin (DeleteAction / ForceDeleteAction hiding, custom-named-action auto-hide, locked form-field auto-disable, master-switch kill, app-extended allowlists).
 
 ```bash
 composer test

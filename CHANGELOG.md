@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-05-22
+
+### Added — Late role assignment (race fix)
+- **Retroactive role assignment** for the protected super admin when the Spatie Role row is created later. Solves a real race: `MigrationsEnded` fires during `migrate`, which is *before* any seeder runs. If the host uses `spatie/laravel-permission`, the Role row for `super_admin` does not exist yet at that point, so `install()`'s best-effort `assignRole()` silently fails — the user ends up created and protected but without the role. The new wildcard `eloquent.created: *` listener picks up the role row the moment it appears (typically the seeder run that follows migrate) and assigns it to the existing protected user. Idempotent and best-effort.
+- New config key `late_role_assignment` (default `true`) to disable for hosts that want strict control.
+- Listener short-circuits cleanly when `spatie/laravel-permission` is not installed at all.
+
+### Added — Filament auto-lock for protected user
+- **Auto-hide named destructive row actions on the protected user.** The Filament plugin now walks every `Filament\Actions\Action` subclass at construction (via `configureUsing` on the base class — `ComponentManager` propagates configurations down `class_parents`) and hides any action whose `getName()` is in the configurable `filament.hidden_action_names` allowlist when the record is the super admin. Default list covers the destructive verbs we see across the 14+ Codenzia consumer apps: `delete`, `forceDelete`, `suspend`, `unsuspend`, `ban`, `unban`, `markEmailVerified`, `verify`, `unverify`, `impersonate`, `demote`.
+- **Auto-disable privileged form fields when editing the protected user.** Same mechanism on `Filament\Forms\Components\Field`. Default `filament.locked_field_names`: `roles`, `role`, `permissions`, `status`, `is_protected`, `email`, `user_type`. Closes the "admin opens the super admin user form and removes the super_admin role assignment" loophole.
+- **Apps can extend defaults via config** without touching any code:
+  ```php
+  // config/superadmin.php
+  'filament' => [
+      'hidden_action_names' => [...config('superadmin.filament.hidden_action_names'), 'my_custom_destructive_action'],
+      'locked_field_names'  => [...config('superadmin.filament.locked_field_names'), 'my_privileged_field'],
+  ],
+  ```
+- **Whole feature still gated by `filament.hide_destructive_actions`** (existing master switch).
+
+### Migration notes
+Consumer apps inherit the new protection on next `composer update` — no code changes required. If an app has a legitimately destructive action with a name that collides with the default list (e.g. an unrelated `delete` action against a non-User resource), the auto-hide closure short-circuits when `SuperAdmin::is($record)` is false, so non-User resources are unaffected.
+
+### Tests
+- 15 new Pest tests in `tests/Feature/FilamentAutoLockTest.php` covering: auto-hide of `DeleteAction`/`ForceDeleteAction`/named custom actions on the protected user, no-op on regular users and non-destructive actions, auto-disable of locked-name fields on the protected user, no-op on regular users and non-locked fields, the `hide_destructive_actions=false` master kill switch, and app-extended `hidden_action_names`. **105 tests / 173 assertions green.**
+
+## [0.3.1] - 2026-05-21
+
 ### Security
 - **Block `is_protected: false → true` promotion via Eloquent update.** `SuperAdminObserver::updating()` now throws `ProtectedAccountException::cannotProtect()` when a regular user's `is_protected` flag is flipped to `true` outside of `SuperAdmin::withoutProtection()`. Previously the observer only blocked the downgrade direction (`true → false`), so a consumer app that placed `is_protected` inside the User model's `$fillable` was vulnerable to mass-assignment privilege escalation — an attacker submitting `is_protected=true` on a profile-update payload could mark themselves as the protected super admin and become un-deletable.
   - **Impact**: every consumer app gains defense-in-depth without code changes. Existing callers that legitimately promote users to protected (custom admin tools, seeders) must wrap the update in `SuperAdmin::withoutProtection(fn () => $user->update(['is_protected' => true]))`. The package's own `install()` / `ensure()` flow already does this.
@@ -93,7 +121,9 @@ Then replace any seeder calls to `SuperAdmin::install(...)` with `SuperAdmin::en
 
 Initial release.
 
-[Unreleased]: https://github.com/Codenzia/laravel-superadmin/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/Codenzia/laravel-superadmin/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/Codenzia/laravel-superadmin/compare/v0.3.1...v0.3.2
+[0.3.1]: https://github.com/Codenzia/laravel-superadmin/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Codenzia/laravel-superadmin/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Codenzia/laravel-superadmin/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/Codenzia/laravel-superadmin/compare/v0.1.2...v0.1.3

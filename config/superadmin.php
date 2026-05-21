@@ -99,17 +99,72 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Late Role Assignment
+    |--------------------------------------------------------------------------
+    |
+    | Retroactively assign the configured role to the protected super admin
+    | the moment that role is created in the database. Solves a real race:
+    | `MigrationsEnded` fires during `migrate`, BEFORE any seeder runs. If
+    | the host uses spatie/laravel-permission, the Role row for `super_admin`
+    | does not exist yet at that point, so install()'s best-effort
+    | assignRole() silently fails. With this listener enabled, the role is
+    | applied the moment the seeder (or any other source) creates the row.
+    | Idempotent. Set to false for strict-control hosts.
+    |
+    */
+
+    'late_role_assignment' => (bool) env('SUPER_ADMIN_LATE_ROLE_ASSIGNMENT', true),
+
+    /*
+    |--------------------------------------------------------------------------
     | Filament Integration
     |--------------------------------------------------------------------------
     |
     | When filament/filament is installed and SuperAdminPlugin is registered
-    | on a panel, this hides destructive row actions on the protected
-    | account in any Filament resource.
+    | on a panel:
+    |
+    |  - DeleteAction / ForceDeleteAction are auto-hidden on the protected
+    |    user row.
+    |  - Any row Action whose `getName()` matches `hidden_action_names` is
+    |    auto-hidden on the protected user row. Default list covers the
+    |    common destructive verbs used across our 14+ Codenzia apps
+    |    (suspend/ban/markEmailVerified/impersonate/…). Apps can extend
+    |    by setting their own array here.
+    |  - Any form Field whose `getName()` matches `locked_field_names` is
+    |    auto-disabled when editing the protected user. Default list covers
+    |    the privilege-escalation fields admins must never flip on the
+    |    super admin (roles, status, is_protected, email, …).
+    |
+    | Set `hide_destructive_actions` to false to turn the whole thing off.
     |
     */
 
     'filament' => [
         'hide_destructive_actions' => true,
+
+        'hidden_action_names' => [
+            'delete',
+            'forceDelete',
+            'suspend',
+            'unsuspend',
+            'ban',
+            'unban',
+            'markEmailVerified',
+            'verify',
+            'unverify',
+            'impersonate',
+            'demote',
+        ],
+
+        'locked_field_names' => [
+            'roles',
+            'role',
+            'permissions',
+            'status',
+            'is_protected',
+            'email',
+            'user_type',
+        ],
     ],
 
 ];
