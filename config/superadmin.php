@@ -6,23 +6,24 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Email + Password (override the package defaults)
+    | Identity (name / email / password / role)
     |--------------------------------------------------------------------------
     |
-    | When unset, the package auto-derives the email from your app config:
-    |   1. SUPER_ADMIN_EMAIL — if set
-    |   2. superadmin@<host>          — from parse_url(APP_URL).host
-    |   3. superadmin@<slug>.local    — from Str::slug(APP_NAME)
+    | None of the super-admin's identity attributes live in this config or in
+    | environment variables. Identity is either passed by the host seeder via
+    | `SuperAdmin::ensure([...])` or derived by the package:
     |
-    | Password defaults to the literal string "superadmin" — memorable for
-    | local dev / internal use. Override before deploying to production via
-    | SUPER_ADMIN_PASSWORD or `php artisan superadmin:setup`.
+    |   - name     → "Super Admin" (default) or seeder override
+    |   - email    → superadmin@<APP_URL host> → superadmin@<APP_NAME slug>.local
+    |                or seeder override
+    |   - password → "superadmin" (default) or seeder override
+    |   - role     → filament-shield.super_admin.name (auto-discovered) →
+    |                "super_admin" (fallback)
+    |
+    | Post-seed credential changes go through `php artisan superadmin:ensure`,
+    | which updates the DB row only — it never touches `.env`.
     |
     */
-
-    'email' => env('SUPER_ADMIN_EMAIL'),
-
-    'password' => env('SUPER_ADMIN_PASSWORD', 'superadmin'),
 
     /*
     |--------------------------------------------------------------------------
@@ -36,19 +37,6 @@ return [
     */
 
     'user_model' => null,
-
-    /*
-    |--------------------------------------------------------------------------
-    | Role
-    |--------------------------------------------------------------------------
-    |
-    | If your project uses spatie/laravel-permission, the package assigns
-    | this role to the super admin on install/setup. Set to null to skip
-    | role assignment entirely.
-    |
-    */
-
-    'role' => env('SUPER_ADMIN_ROLE', 'super_admin'),
 
     /*
     |--------------------------------------------------------------------------

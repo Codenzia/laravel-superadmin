@@ -8,9 +8,16 @@ use Illuminate\Support\Facades\Hash;
 
 uses(TestCase::class)->in('Feature', 'Unit');
 
+/**
+ * Legacy helper kept for call-site compatibility. v0.4.0 dropped the
+ * `superadmin.email` config key, so setting it is a no-op — identity is now
+ * either passed via `SuperAdmin::ensure([...])` or derived from APP_URL.
+ * Tests that need a pre-existing protected user should call
+ * `createProtectedSuperAdmin()` directly.
+ */
 function configureSuperAdmin(string $email = 'superadmin@aqarkom.test'): void
 {
-    config()->set('superadmin.email', $email);
+    // no-op
 }
 
 function createProtectedSuperAdmin(string $email = 'superadmin@aqarkom.test', string $password = 'super-secret-pw-12345'): User

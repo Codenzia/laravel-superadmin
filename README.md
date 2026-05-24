@@ -18,7 +18,7 @@
 - A **`Gate::before` hook** so the super admin authorizes for every ability — works without Spatie, Shield, or any policies wired up.
 - **Late role assignment.** Solves the `MigrationsEnded` vs Spatie-Role-row race: when `spatie/laravel-permission` is in use, the `super_admin` role row often doesn't exist yet at auto-install time, so the role would silently fail to attach. A wildcard `eloquent.created` listener retroactively assigns the configured role the moment the row appears in a later seeder run. Idempotent and best-effort; no-ops cleanly when Spatie isn't installed.
 - A **Filament plugin** that hides destructive row actions (`delete`, `suspend`, `ban`, `impersonate`, …) and disables privileged form fields (`roles`, `status`, `email`, …) on the protected user row — automatically, across every consumer app, with no per-resource code.
-- A **`superadmin:setup` command** that interactively rotates the email + password, persisting both to `.env` and the DB.
+- A **`superadmin:ensure` command** that interactively rotates name + email + password. DB-only — never reads or writes `.env`.
 - A **`superadmin:status` command** (with `--verbose` for full health diagnostics) so you can verify the install in one shot.
 
 ## Quick start
@@ -27,57 +27,71 @@
 composer require codenzia/laravel-superadmin
 php artisan migrate
 # ✓ Created protected super admin: superadmin@<your-host> (password: superadmin)
-# Override anytime with `php artisan superadmin:setup` or by editing .env.
+# Override defaults in your seeder via SuperAdmin::ensure([...]). Change later with `php artisan superadmin:ensure`.
 ```
 
 That's the whole install. The package listens to `MigrationsEnded` and creates the protected user once, if and only if no protected user exists. Re-running `migrate` is a no-op.
 
-### Override the defaults — three options
+### Override the defaults — two paths
 
-**(1) Before first migrate** — edit `.env`:
+v0.4.0+ keeps identity fields (name / email / password) out of `.env` and config entirely. Plaintext credentials never live on the host filesystem. Two override paths:
 
-```ini
-SUPER_ADMIN_EMAIL=admin@your-app.test
-SUPER_ADMIN_PASSWORD=your-strong-password
+**(1) Pin the values in your seeder** — runs every `migrate:fresh --seed` / on first install:
+
+```php
+use Codenzia\SuperAdmin\Facades\SuperAdmin;
+
+class UserSeeder extends Seeder
+{
+    public function run(): void
+    {
+        SuperAdmin::ensure([
+            'name'     => 'Super Admin',
+            'email'    => 'admin@your-app.test',
+            'password' => 'your-strong-password',
+        ]);
+    }
+}
 ```
 
-**(2) Any time after install** — interactive command:
+Pass any subset of `['name', 'email', 'password']`. Omitted keys fall back to package defaults on create; on update they're left unchanged (password specifically — omit to keep the current hash).
+
+**(2) Rotate post-install** — DB-only artisan command:
 
 ```bash
-php artisan superadmin:setup
-# Super admin email [superadmin@your-app.test]: admin@your-app.test
-# Super admin password (leave blank to keep current): <new password or blank>
-# ✓ Saved SUPER_ADMIN_EMAIL to .env
-# ✓ Saved SUPER_ADMIN_PASSWORD to .env
-# ✓ Updated DB row for admin@your-app.test
+php artisan superadmin:ensure
+# Super admin name [Super Admin]:
+# Super admin email [admin@your-app.test]:
+# Super admin password (leave blank to keep current): <new password>
+# ✓ Updated protected super admin: admin@your-app.test
 ```
 
-**(3) Non-interactive** — flags only:
+Non-interactive variant:
 
 ```bash
-php artisan superadmin:setup --email=admin@your-app.test --password='your-strong-password'
+php artisan superadmin:ensure --email=admin@your-app.test --password='your-strong-password'
 ```
 
-`superadmin:setup` writes to `.env` and updates the DB row in one step. Pass `--password=''` (or accept the blank prompt) to keep the existing password while rotating the email.
+`superadmin:ensure` never reads or writes `.env`. Plaintext only lives in the seeder source (committed to your repo with code) or in the operator's terminal during rotation.
 
-> **Production password warning.** The default `superadmin` is deliberately memorable for local dev and internal use. **Always** set a real password before exposing the app to anyone — either via `SUPER_ADMIN_PASSWORD` in `.env` before first migrate, or via `superadmin:setup` afterwards.
+> **Production password warning.** The default `superadmin` is deliberately memorable for local dev and internal use. **Always** override via the seeder or rotate via `superadmin:ensure` before exposing the app to anyone.
 
 ## Default email resolution
 
-When `SUPER_ADMIN_EMAIL` isn't set, the package derives one from your host's own config — never a vendor domain:
+When the seeder doesn't pass `email`, the package derives one from your host's own config — never a vendor domain:
 
-1. `env('SUPER_ADMIN_EMAIL')` if set
-2. else `superadmin@<host>` where `<host> = parse_url(config('app.url'), PHP_URL_HOST)`
-3. else `superadmin@<slug>.local` where `<slug> = Str::slug(config('app.name'))`
+1. `superadmin@<host>` where `<host> = parse_url(config('app.url'), PHP_URL_HOST)`
+2. else `superadmin@<slug>.local` where `<slug> = Str::slug(config('app.name'))`
 
 So `APP_URL=https://myshop.com` → `superadmin@myshop.com`. `APP_NAME="My Shop"` with no URL → `superadmin@my-shop.local`.
 
+## Default role resolution (Filament Shield bridge)
+
+When `bezhansalleh/filament-shield` is installed, `configuredRole()` auto-discovers Shield's super-admin role name from `filament-shield.super_admin.name`. Apps don't need to set the role name in two places. When Shield is not present, the package falls back to the literal `'super_admin'`.
+
 ## How protection works
 
-The package identifies the protected row via **either** signal — both must be tampered with to silently disable protection:
-
-- `users.is_protected = true` (DB column)
-- `users.email` matching `SUPER_ADMIN_EMAIL` (or the derived default)
+The package identifies the protected row via the `users.is_protected = true` DB column. v0.4.0+ removed the secondary email-match path since identity is no longer env-driven — the flag is the single source of truth, set by `install()` / `ensure()` and defended by the observer.
 
 Four protection layers — each independent, so tampering with one doesn't silently disable the others:
 
@@ -110,7 +124,7 @@ class User extends Authenticatable
 
 | Command | Purpose |
 |---|---|
-| `superadmin:setup` | Create or update the protected user. Writes to `.env` AND DB. Replaces the old `install` + `reset` commands. |
+| `superadmin:ensure` | Create or update the protected user. **DB-only — never reads or writes `.env`.** Interactive prompts for name / email / password; pass any subset as flags to skip prompts. |
 | `superadmin:status` | Summary of the protected user. Exits non-zero if missing. |
 | `superadmin:status --verbose` | Adds the full health diagnostic matrix (model resolvable, column exists, protection enabled, role assigned, etc.). |
 
@@ -132,10 +146,10 @@ The package config is small. After `php artisan vendor:publish --tag=superadmin-
 
 ```php
 return [
-    'email'                 => env('SUPER_ADMIN_EMAIL'),
-    'password'              => env('SUPER_ADMIN_PASSWORD', 'superadmin'),
+    // v0.4.0+: identity (name / email / password / role) is NOT in this
+    // config and NOT in env. See "Override the defaults" above — defaults
+    // are seeder-driven via SuperAdmin::ensure([...]) or derived.
     'user_model'            => null,                                              // null = resolved from auth.providers
-    'role'                  => env('SUPER_ADMIN_ROLE', 'super_admin'),
     'auto_install'          => env('SUPER_ADMIN_AUTO_INSTALL', true),             // create user on MigrationsEnded
     'authorization'         => ['gate_before' => true],                           // super admin passes every can()
     'protection'            => ['enabled' => env('SUPER_ADMIN_PROTECTION', true)],
@@ -163,7 +177,7 @@ return [
 
 ## Seeder integration
 
-`SuperAdmin::ensure()` is the seeder-safe primitive — idempotent get-or-create:
+`SuperAdmin::ensure()` is the seeder-safe primitive. Two modes:
 
 ```php
 use Codenzia\SuperAdmin\Facades\SuperAdmin;
@@ -172,17 +186,25 @@ class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
+        // (a) No args — idempotent get-or-create.
+        //     Returns the existing protected user, or creates one with
+        //     defaultName() / defaultEmail() / defaultPassword().
         $superAdmin = SuperAdmin::ensure();
-        // returns the existing protected user, or creates one with defaultEmail() + defaultPassword()
 
-        // Continue with the rest of your seed data...
+        // (b) With array — force-applies the supplied fields. Use this
+        //     to pin app-specific values that survive every reseed.
+        $superAdmin = SuperAdmin::ensure([
+            'name'     => 'Super Admin',
+            'email'    => 'admin@your-app.test',
+            'password' => 'your-strong-password',
+        ]);
     }
 }
 ```
 
-You almost never need to call this — the migration hook already handles fresh installs. `ensure()` is for seeders that need the user object up-front (foreign keys, audit attribution, etc.) without risking a duplicate.
+You don't strictly need the no-args call — the `MigrationsEnded` auto-install already handles fresh installs. The array form is the recommended pattern when a project wants stable, repo-tracked superadmin credentials across all of its environments.
 
-For raw create/update with explicit credentials, use `SuperAdmin::install($password, $email)`.
+For raw create/update with explicit credentials, use `SuperAdmin::install($password, $email, $name)`.
 
 ## Integration patterns
 
@@ -299,22 +321,51 @@ The package never creates the role row, defines permissions, or installs Shield 
 
 See [CHANGELOG.md](CHANGELOG.md) for the full release notes.
 
+## Upgrading from 0.3.x to 0.4.0
+
+v0.4.0 moves identity (name / email / password / role) entirely out of `.env` and config. Per-app upgrade:
+
+1. `composer update codenzia/laravel-superadmin`
+2. Move any per-app overrides from `.env` into your seeder:
+   ```php
+   // database/seeders/UserSeeder.php
+   SuperAdmin::ensure([
+       'email'    => 'admin@your-app.test',     // was: SUPER_ADMIN_EMAIL
+       'password' => 'your-strong-password',    // was: SUPER_ADMIN_PASSWORD
+   ]);
+   ```
+3. Delete `SUPER_ADMIN_PASSWORD`, `SUPER_ADMIN_EMAIL`, `SUPER_ADMIN_ROLE`, `SUPER_ADMIN_NAME` from every `.env` and `.env.example`. These env vars are no longer honored — leaving them set is harmless but stale.
+4. If you publish the package config: delete the `email`, `password`, `role` keys from `config/superadmin.php`. They're no longer read.
+5. Update any callers of `php artisan superadmin:setup` to `php artisan superadmin:ensure`. The old command name was removed.
+6. If you use Filament Shield: nothing to do — `configuredRole()` now auto-discovers `filament-shield.super_admin.name`.
+
+### Removed in 0.4.0
+
+| Removed | Replacement |
+|---|---|
+| `SUPER_ADMIN_PASSWORD` env var | Seeder override: `SuperAdmin::ensure(['password' => '...'])` |
+| `SUPER_ADMIN_EMAIL` env var | Seeder override: `SuperAdmin::ensure(['email' => '...'])` |
+| `SUPER_ADMIN_ROLE` env var | Auto-discovered from `filament-shield.super_admin.name` |
+| `config('superadmin.email' / '.password' / '.role')` | Same — moved into seeder or auto-discovered |
+| `superadmin:setup` command | `superadmin:ensure` (interactive prompts, but DB-only — no `.env` writes) |
+| `EnvWriter` helper | Removed entirely — the package never writes to `.env` now |
+
 ## Upgrading from 0.2.x
 
-v0.3.0 is a **clean break**. The vendor-friction model is gone. Per-app upgrade:
+v0.3.0 was a **clean break**. The vendor-friction model is gone. Per-app upgrade:
 
 1. `composer update codenzia/laravel-superadmin`
 2. `php artisan migrate` — auto-installs the protected user if none exists; no-op if one does.
 3. Replace any seeder calls to `SuperAdmin::install(...)` with `SuperAdmin::ensure()` (or keep `install()` if you need explicit credentials).
-4. Delete `.env` entries that are no longer recognized (see table below). Keep `SUPER_ADMIN_EMAIL` and `SUPER_ADMIN_PASSWORD` if you set them.
+4. Delete `.env` entries that are no longer recognized (see table below).
 
 ### Removed in 0.3.0
 
 | Removed | Replacement |
 |---|---|
-| `superadmin:install` | `superadmin:setup` (or just run `migrate` for the default install) |
-| `superadmin:reset` | `superadmin:setup` |
-| `superadmin:assign-role` | (automatic on `install()` / `ensure()` / `setup`) |
+| `superadmin:install` | `superadmin:ensure` (or just run `migrate` for the default install) |
+| `superadmin:reset` | `superadmin:ensure` |
+| `superadmin:assign-role` | (automatic on `install()` / `ensure()`) |
 | `superadmin:doctor` | `superadmin:status --verbose` |
 | `--confirm` flag, typed phrase, `VendorCommandInvoked` notification | Removed entirely. No friction layer. |
 | `SUPER_ADMIN_NOTIFY_MAIL` / `SUPER_ADMIN_NOTIFY_SLACK` / `SUPER_ADMIN_VENDOR_PHRASE` | Removed entirely. |
@@ -329,7 +380,7 @@ v0.3.0 is a **clean break**. The vendor-friction model is gone. Per-app upgrade:
 - Filament destructive-action hiding
 - `IsSuperAdmin` trait + query scopes
 - `SuperAdmin` facade — `is()`, `user()`, `exists()`, `install()`, `email()`, `userModel()`, `isConfigured()`, `assignRole()`, `hasConfiguredRole()`, `withoutProtection()`
-- New facade methods: `ensure()`, `defaultEmail()`, `defaultPassword()`
+- Facade methods: `ensure(?array)`, `defaultEmail()`, `defaultPassword()`, `defaultName()`
 
 ## Testing
 

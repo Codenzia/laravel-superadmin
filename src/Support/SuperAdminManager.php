@@ -18,29 +18,27 @@ final class SuperAdminManager
 
     public function __construct(private readonly Container $app) {}
 
+    /**
+     * Returns the configured super-admin email. v0.4.0 removed the config /
+     * env key entirely, so this now always returns null. The method is kept
+     * because `is()` and `user()` call it — null lets them fall through to
+     * the `is_protected = true` lookup cleanly without an extra branch.
+     */
     public function email(): ?string
     {
-        $email = $this->config()->get('superadmin.email');
-
-        return is_string($email) && $email !== '' ? mb_strtolower($email) : null;
+        return null;
     }
 
     /**
-     * Resolve the email to use when none is explicitly configured.
-     * Three-tier resolution, derived from the host's own app config so the
-     * package never bakes in a vendor domain:
+     * Email used when none is passed via `ensure([...])`. Always derived
+     * from the host's own app config so the package never bakes in a vendor
+     * domain:
      *
-     *   1. SUPER_ADMIN_EMAIL (env / config) — if set
-     *   2. superadmin@<host>          — where <host> = parse_url(APP_URL).host
-     *   3. superadmin@<slug>.local    — where <slug> = Str::slug(APP_NAME)
+     *   1. superadmin@<host>          — where <host> = parse_url(APP_URL).host
+     *   2. superadmin@<slug>.local    — where <slug> = Str::slug(APP_NAME)
      */
     public function defaultEmail(): string
     {
-        $configured = $this->email();
-        if ($configured !== null) {
-            return $configured;
-        }
-
         $url = (string) $this->config()->get('app.url', '');
         $host = $url !== '' ? parse_url($url, PHP_URL_HOST) : null;
 
@@ -54,16 +52,24 @@ final class SuperAdminManager
     }
 
     /**
-     * The password used when no explicit one is provided. Defaults to the
-     * literal string "superadmin" — deliberately memorable for local dev /
-     * internal use. Vendors deploying to production must override via
-     * SUPER_ADMIN_PASSWORD or `php artisan superadmin:setup`.
+     * Password used when none is passed via `ensure([...])`. Always returns
+     * the literal "superadmin" — memorable for local dev. Apps deploying to
+     * production must override via the seeder or rotate post-install via
+     * `php artisan superadmin:ensure`.
      */
     public function defaultPassword(): string
     {
-        $configured = $this->config()->get('superadmin.password');
+        return 'superadmin';
+    }
 
-        return is_string($configured) && $configured !== '' ? $configured : 'superadmin';
+    /**
+     * Name used when none is passed via `ensure([...])`. Always returns
+     * "Super Admin". Mirror of defaultPassword() / defaultEmail() so all
+     * three identity defaults live in one place.
+     */
+    public function defaultName(): string
+    {
+        return 'Super Admin';
     }
 
     /**
@@ -84,9 +90,17 @@ final class SuperAdminManager
         return is_string($model) && $model !== '' ? $model : null;
     }
 
+    /**
+     * Whether the package is ready to install the super admin.
+     *
+     * v0.4.0+ — identity defaults (name / email / password / role) are now
+     * always available (derived or hardcoded), so the package is always
+     * "configured" and this always returns true. The method is kept for
+     * backward compatibility with callers / facade stubs.
+     */
     public function isConfigured(): bool
     {
-        return $this->email() !== null;
+        return true;
     }
 
     /**
@@ -156,21 +170,40 @@ final class SuperAdminManager
     }
 
     /**
-     * Idempotent get-or-create. Safe to call from seeders, the auto-install
-     * migration hook, and anywhere else that needs "the superadmin must
-     * exist." Returns the existing user untouched if one is present;
-     * otherwise creates it via install() using defaultEmail() +
-     * defaultPassword().
+     * Idempotent get-or-create with optional seeder overrides.
+     *
+     * Two modes:
+     *
+     *  - **No args** (auto-install hook / `ensure()`): returns the existing
+     *    protected user untouched when present; otherwise creates one using
+     *    `defaultName()` / `defaultEmail()` / `defaultPassword()`.
+     *
+     *  - **With array** (seeder path / `ensure(['password' => 'X', ...])`):
+     *    extracts `name`, `email`, `password` keys and force-applies them.
+     *    Creates the user when missing; updates fields on the existing user
+     *    when present. Omitted keys fall back to package defaults on create
+     *    and are left unchanged on update (password specifically — supply
+     *    null/omit to keep the current hash).
+     *
+     * @param  array{name?: string|null, email?: string|null, password?: string|null}|null  $defaults
      */
-    public function ensure(): Model
+    public function ensure(?array $defaults = null): Model
     {
-        $existing = $this->user();
+        if ($defaults === null) {
+            $existing = $this->user();
 
-        if ($existing !== null) {
-            return $existing;
+            if ($existing !== null) {
+                return $existing;
+            }
+
+            return $this->install($this->defaultPassword(), $this->defaultEmail(), $this->defaultName());
         }
 
-        return $this->install($this->defaultPassword(), $this->defaultEmail());
+        $password = $defaults['password'] ?? null;
+        $email    = $defaults['email']    ?? null;
+        $name     = $defaults['name']     ?? $this->defaultName();
+
+        return $this->install($password, $email, $name);
     }
 
     /**
@@ -251,11 +284,26 @@ final class SuperAdminManager
         return $this->protectionBypassed;
     }
 
+    /**
+     * Role assigned to the protected super admin.
+     *
+     * Resolution order (v0.4.0+ — no env/config key):
+     *
+     *   1. `filament-shield.super_admin.name` — auto-discovered when the
+     *      host app has `bezhansalleh/filament-shield` installed and
+     *      configured. Shield's config is the source of truth.
+     *   2. Literal `'super_admin'` — hardcoded fallback when Shield is not
+     *      present or its value is empty.
+     */
     public function configuredRole(): ?string
     {
-        $role = $this->config()->get('superadmin.role');
+        $shield = $this->config()->get('filament-shield.super_admin.name');
 
-        return is_string($role) && $role !== '' ? $role : null;
+        if (is_string($shield) && $shield !== '') {
+            return $shield;
+        }
+
+        return 'super_admin';
     }
 
     /**

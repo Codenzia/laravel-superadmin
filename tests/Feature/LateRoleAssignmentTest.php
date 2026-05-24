@@ -24,7 +24,7 @@ beforeEach(function (): void {
     config()->set('permission.models.role', FakeRole::class);
     config()->set('auth.providers.users.model', UserWithRoles::class);
     config()->set('superadmin.user_model', UserWithRoles::class);
-    config()->set('superadmin.role', 'super_admin');
+    config()->set('filament-shield.super_admin.name', 'super_admin');
     config()->set('superadmin.late_role_assignment', true);
 
     Schema::dropIfExists('fake_roles');
@@ -74,22 +74,6 @@ it('no-ops when the protected user does not yet exist', function (): void {
     FakeRole::query()->create(['name' => 'super_admin']);
 
     expect(SuperAdmin::exists())->toBeFalse();
-});
-
-it('no-ops when no role is configured', function (): void {
-    config()->set('superadmin.role', null);
-
-    $user = UserWithRoles::query()->create([
-        'name' => 'Super Admin',
-        'email' => 'superadmin@aqarkom.test',
-        'password' => Hash::make('pw-1234567890'),
-        'is_protected' => true,
-    ]);
-    UserWithRoles::$rolesInDatabase = ['super_admin'];
-
-    FakeRole::query()->create(['name' => 'super_admin']);
-
-    expect($user->fresh()->hasRole('super_admin'))->toBeFalse();
 });
 
 it('no-ops when late_role_assignment is disabled', function (): void {

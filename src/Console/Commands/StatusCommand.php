@@ -46,14 +46,14 @@ final class StatusCommand extends Command
         }
 
         $rows[] = ['Protection enabled', config('superadmin.protection.enabled', true) ? 'yes' : 'NO'];
-        $rows[] = ['Role', (string) (config('superadmin.role') ?? '<none>')];
+        $rows[] = ['Role', (string) ($manager->configuredRole() ?? '<none>')];
         $rows[] = ['Auto-install on migrate', config('superadmin.auto_install', true) ? 'yes' : 'NO'];
 
         $this->table(['Setting', 'Value'], $rows);
 
         if (! $exists) {
             $this->line('');
-            $this->warn('Super admin account is missing. Run `php artisan superadmin:setup` (or just `php artisan migrate` with auto_install enabled).');
+            $this->warn('Super admin account is missing. Run `php artisan superadmin:ensure` (or just `php artisan migrate` with auto_install enabled).');
 
             return self::FAILURE;
         }
@@ -112,17 +112,7 @@ final class StatusCommand extends Command
             $flag = (bool) $user->getAttribute('is_protected');
             $rows[] = ['Protected user is_protected = true', $flag ? 'yes' : 'NO', $flag ? '✓' : '✗'];
             if (! $flag) {
-                $problems[] = 'The protected user has is_protected = false. Re-run `php artisan superadmin:setup`.';
-            }
-
-            $configuredEmail = $manager->email();
-            if ($configuredEmail !== null) {
-                $userEmail = mb_strtolower((string) $user->getAttribute('email'));
-                $matches = $userEmail === $configuredEmail;
-                $rows[] = ['Email matches SUPER_ADMIN_EMAIL', $matches ? 'yes' : 'NO', $matches ? '✓' : '⚠'];
-                if (! $matches) {
-                    $problems[] = 'The protected user email does not match SUPER_ADMIN_EMAIL. Identification will rely on the is_protected flag only.';
-                }
+                $problems[] = 'The protected user has is_protected = false. Re-run `php artisan superadmin:ensure`.';
             }
         }
 
@@ -139,7 +129,7 @@ final class StatusCommand extends Command
                     $rows[] = ['Role "'.$role.'" assigned', 'yes', '✓'];
                 } elseif (! $gateBefore) {
                     $rows[] = ['Role "'.$role.'" assigned', 'NO', '✗'];
-                    $problems[] = 'Protected user does not have role "'.$role.'" AND gate_before is disabled. The super admin cannot authorize anything. Re-run `php artisan superadmin:setup`.';
+                    $problems[] = 'Protected user does not have role "'.$role.'" AND gate_before is disabled. The super admin cannot authorize anything. Re-run `php artisan superadmin:ensure`.';
                 } else {
                     $rows[] = ['Role "'.$role.'" assigned', 'NO (Gate::before still authorizes)', '⚠'];
                 }

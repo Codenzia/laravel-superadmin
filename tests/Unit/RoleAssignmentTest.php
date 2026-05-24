@@ -16,21 +16,8 @@ beforeEach(function (): void {
     configureSuperAdmin('superadmin@aqarkom.test');
 });
 
-it('returns NotConfigured when no role is configured', function (): void {
-    config()->set('superadmin.role', null);
-
-    $user = UserWithRoles::query()->create([
-        'name' => 'Admin',
-        'email' => 'superadmin@aqarkom.test',
-        'password' => Hash::make('pw-1234567890'),
-        'is_protected' => true,
-    ]);
-
-    expect(SuperAdmin::assignRole($user))->toBe(RoleAssignmentResult::NotConfigured);
-});
-
 it('returns NotSupported when User model has no assignRole method', function (): void {
-    config()->set('superadmin.role', 'super_admin');
+    config()->set('filament-shield.super_admin.name', 'super_admin');
     config()->set('auth.providers.users.model', User::class);
     config()->set('superadmin.user_model', User::class);
 
@@ -45,7 +32,7 @@ it('returns NotSupported when User model has no assignRole method', function ():
 });
 
 it('returns Assigned when role exists and was not previously assigned', function (): void {
-    config()->set('superadmin.role', 'super_admin');
+    config()->set('filament-shield.super_admin.name', 'super_admin');
     UserWithRoles::$rolesInDatabase = ['super_admin'];
 
     $user = UserWithRoles::query()->create([
@@ -60,7 +47,7 @@ it('returns Assigned when role exists and was not previously assigned', function
 });
 
 it('returns AlreadyAssigned on subsequent calls', function (): void {
-    config()->set('superadmin.role', 'super_admin');
+    config()->set('filament-shield.super_admin.name', 'super_admin');
 
     $user = UserWithRoles::query()->create([
         'name' => 'Admin',
@@ -75,7 +62,7 @@ it('returns AlreadyAssigned on subsequent calls', function (): void {
 });
 
 it('returns Failed when the role does not exist', function (): void {
-    config()->set('superadmin.role', 'super_admin');
+    config()->set('filament-shield.super_admin.name', 'super_admin');
     UserWithRoles::$rolesInDatabase = []; // role table is empty
 
     $user = UserWithRoles::query()->create([
@@ -88,36 +75,22 @@ it('returns Failed when the role does not exist', function (): void {
     expect(SuperAdmin::assignRole($user))->toBe(RoleAssignmentResult::Failed);
 });
 
-it('configuredRole() returns the configured value', function (): void {
-    config()->set('superadmin.role', 'custom_admin');
+it('configuredRole() returns the Shield-discovered value', function (): void {
+    config()->set('filament-shield.super_admin.name', 'custom_admin');
 
     expect(app(SuperAdminManager::class)->configuredRole())
         ->toBe('custom_admin');
 });
 
-it('configuredRole() returns null when empty', function (): void {
-    config()->set('superadmin.role', '');
+it('configuredRole() falls back to "super_admin" literal when Shield not configured', function (): void {
+    config()->set('filament-shield.super_admin.name', '');
 
     expect(app(SuperAdminManager::class)->configuredRole())
-        ->toBeNull();
-});
-
-it('hasConfiguredRole() returns null when no role configured', function (): void {
-    config()->set('superadmin.role', null);
-
-    $user = UserWithRoles::query()->create([
-        'name' => 'Admin',
-        'email' => 'superadmin@aqarkom.test',
-        'password' => Hash::make('pw-1234567890'),
-        'is_protected' => true,
-    ]);
-
-    expect(app(SuperAdminManager::class)->hasConfiguredRole($user))
-        ->toBeNull();
+        ->toBe('super_admin');
 });
 
 it('hasConfiguredRole() returns false when user lacks the role', function (): void {
-    config()->set('superadmin.role', 'super_admin');
+    config()->set('filament-shield.super_admin.name', 'super_admin');
 
     $user = UserWithRoles::query()->create([
         'name' => 'Admin',
@@ -131,7 +104,7 @@ it('hasConfiguredRole() returns false when user lacks the role', function (): vo
 });
 
 it('hasConfiguredRole() returns true once role is assigned', function (): void {
-    config()->set('superadmin.role', 'super_admin');
+    config()->set('filament-shield.super_admin.name', 'super_admin');
 
     $user = UserWithRoles::query()->create([
         'name' => 'Admin',

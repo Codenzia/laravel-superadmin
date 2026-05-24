@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-05-24
+
+### BREAKING — identity moves out of `.env` and config
+
+The protected super-admin's identity (name / email / password / role) no longer lives in environment variables or in `config/superadmin.php`. Every consumer app sets identity in two places only:
+
+1. **Seeder** — pin app-specific values that survive every `migrate:fresh --seed`:
+   ```php
+   SuperAdmin::ensure([
+       'name'     => 'Super Admin',
+       'email'    => 'admin@your-app.test',
+       'password' => 'your-strong-password',
+   ]);
+   ```
+2. **Artisan command** — rotate post-install: `php artisan superadmin:ensure`. DB-only — never writes to `.env`.
+
+Plaintext credentials no longer touch the host filesystem. The motivating incidents: a deploy where the package's `'superadmin'` default won over an env value that didn't make it to the host, and the recurring drift of `SUPER_ADMIN_PASSWORD` living in 3-4 places per app (host `.env`, package config, app config shim, occasionally hard-coded in a seeder).
+
+### Added
+- **`SuperAdmin::ensure(?array $defaults = null)` overload.**
+  - No args: existing idempotent get-or-create behavior (returns existing user untouched, creates with defaults when missing). Auto-install hook (`MigrationsEnded`) calls this.
+  - With array: extracts `name`, `email`, `password` from the array and force-applies to the user. Creates on missing, updates on existing. Omitted keys fall back to package defaults on create; on update, omitted password keeps the current hash.
+- **`SuperAdmin::defaultName()`** returning `'Super Admin'`. Mirror of `defaultPassword()` / `defaultEmail()` so all three identity defaults live in one place.
+- **Filament Shield role auto-discovery.** `SuperAdminManager::configuredRole()` now reads `filament-shield.super_admin.name` when Shield is installed and configured. Apps no longer need to set `SUPER_ADMIN_ROLE` in two places (Shield's config + the package's). One-way bridge: Shield's config is the source of truth.
+- **`php artisan superadmin:ensure` command.** Replaces `superadmin:setup`. Same interactive prompts (name / email / password) but **DB-only** — never reads or writes `.env`. Pass `--name`, `--email`, `--password` flags non-interactively, or any subset to skip those prompts.
+
+### Removed (breaking)
+- **`SUPER_ADMIN_PASSWORD` env var.** Move to seeder via `SuperAdmin::ensure(['password' => '...'])`. Default remains `'superadmin'` when no seeder override.
+- **`SUPER_ADMIN_EMAIL` env var.** Move to seeder via `SuperAdmin::ensure(['email' => '...'])`. Default derives from `APP_URL` host or `APP_NAME` slug.
+- **`SUPER_ADMIN_ROLE` env var.** Replaced by Shield auto-discovery (or literal `'super_admin'` fallback when Shield not present).
+- **Config keys `email`, `password`, `role` in `config/superadmin.php`.** All three keys removed entirely. Behavioral keys (`auto_install`, `authorization.gate_before`, `protection.enabled`, `late_role_assignment`, `filament.*`) stay — those aren't identity.
+- **`superadmin:setup` command.** Renamed to `superadmin:ensure` with new DB-only semantics.
+- **`EnvWriter` helper class.** No longer needed — the package never writes to `.env`.
+- **`is()` email-match identity path.** Identity is now determined exclusively by the `is_protected = true` flag.
+
+### Migration
+Per consumer app:
+1. `composer update codenzia/laravel-superadmin` (or bump constraint to `^0.4.0`).
+2. Move per-app password override into a seeder (`UserSeeder.php` / `StandardSeeder.php`) using the new `ensure([...])` form.
+3. Delete `SUPER_ADMIN_PASSWORD`, `SUPER_ADMIN_EMAIL`, `SUPER_ADMIN_ROLE`, `SUPER_ADMIN_NAME` from `.env` + `.env.example`.
+4. If `config/superadmin.php` is published, delete the `email`, `password`, `role` keys.
+5. Replace any `php artisan superadmin:setup` callers with `superadmin:ensure`.
+6. `composer test` should pass without touching test code; existing `is_protected`-based identity assertions are unaffected.
+
+### Tests
+- **99 Pest tests / 169 assertions green** after the rewrite. New coverage for:
+  - `ensure(['password' => X])` / `ensure(['email' => X])` / `ensure(['name' => X])` on both create and update paths.
+  - `defaultPassword()` / `defaultEmail()` / `defaultName()` ignoring any stale `superadmin.*` config writes.
+  - `configuredRole()` Shield auto-discovery and literal-`'super_admin'` fallback.
+  - `superadmin:ensure` artisan command never touching `.env`.
+
 ## [0.3.2] - 2026-05-22
 
 ### Added — Late role assignment (race fix)

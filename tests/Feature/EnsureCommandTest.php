@@ -3,52 +3,30 @@
 declare(strict_types=1);
 
 use Codenzia\SuperAdmin\Facades\SuperAdmin;
-use Codenzia\SuperAdmin\Tests\Fixtures\User;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Hash;
 
-beforeEach(function (): void {
-    // Per-test .env in a temp dir so tests don't share state.
-    $this->envPath = sys_get_temp_dir().DIRECTORY_SEPARATOR.'superadmin-setup-test-'.uniqid('', true).'.env';
-    file_put_contents($this->envPath, "APP_NAME=Test\n");
-    // Make the Laravel app point at our temp .env.
-    app()->useEnvironmentPath(dirname($this->envPath));
-    app()->loadEnvironmentFrom(basename($this->envPath));
-});
-
-afterEach(function (): void {
-    if (isset($this->envPath) && is_file($this->envPath)) {
-        @unlink($this->envPath);
-    }
-});
-
-it('creates a brand-new superadmin from --email and --password flags', function (): void {
-    configureSuperAdmin('superadmin@aqarkom.test');
-
-    $this->artisan('superadmin:setup', [
+it('creates a brand-new superadmin from --name, --email, and --password flags', function (): void {
+    $this->artisan('superadmin:ensure', [
+        '--name' => 'Seeded Admin',
         '--email' => 'admin@new-host.test',
         '--password' => 'a-new-secure-password',
     ])->assertSuccessful();
 
     $user = SuperAdmin::user();
     expect($user)->not->toBeNull();
+    expect($user->name)->toBe('Seeded Admin');
     expect($user->email)->toBe('admin@new-host.test');
     expect((bool) $user->is_protected)->toBeTrue();
     expect(Hash::check('a-new-secure-password', $user->password))->toBeTrue();
-
-    // .env was updated
-    $env = file_get_contents($this->envPath);
-    expect($env)->toContain('SUPER_ADMIN_EMAIL=admin@new-host.test');
-    expect($env)->toContain('SUPER_ADMIN_PASSWORD=a-new-secure-password');
 });
 
 it('updates an existing superadmin without changing the password when --password is omitted', function (): void {
-    configureSuperAdmin('current@aqarkom.test');
     createProtectedSuperAdmin('current@aqarkom.test', 'keep-me');
 
-    $this->artisan('superadmin:setup', [
+    $this->artisan('superadmin:ensure', [
+        '--name' => 'Super Admin',
         '--email' => 'updated@aqarkom.test',
-        '--password' => '',
     ])
         ->expectsQuestion('Super admin password (leave blank to keep current)', '')
         ->assertSuccessful();
@@ -56,14 +34,11 @@ it('updates an existing superadmin without changing the password when --password
     $user = SuperAdmin::user();
     expect($user->email)->toBe('updated@aqarkom.test');
     expect(Hash::check('keep-me', $user->password))->toBeTrue();
-
-    $env = file_get_contents($this->envPath);
-    expect($env)->toContain('SUPER_ADMIN_EMAIL=updated@aqarkom.test');
-    expect($env)->not->toContain('SUPER_ADMIN_PASSWORD=');
 });
 
 it('rejects an invalid email', function (): void {
-    $this->artisan('superadmin:setup', [
+    $this->artisan('superadmin:ensure', [
+        '--name' => 'Bad Email Admin',
         '--email' => 'not-an-email',
         '--password' => 'whatever',
     ])->assertExitCode(Command::INVALID);
@@ -72,13 +47,12 @@ it('rejects an invalid email', function (): void {
 });
 
 it('falls back to defaultPassword() when password is blank on a brand-new account', function (): void {
-    config()->set('superadmin.email', null);
     config()->set('app.url', 'https://aqarkom.test');
-    config()->set('superadmin.password', null);
 
-    $this->artisan('superadmin:setup', [
+    $this->artisan('superadmin:ensure', [
         '--password' => '',
     ])
+        ->expectsQuestion('Super admin name', 'Super Admin')
         ->expectsQuestion('Super admin email', 'superadmin@aqarkom.test')
         ->expectsQuestion('Super admin password (leave blank to use default: superadmin)', '')
         ->assertSuccessful();
@@ -87,10 +61,28 @@ it('falls back to defaultPassword() when password is blank on a brand-new accoun
     expect($user)->not->toBeNull();
     expect($user->email)->toBe('superadmin@aqarkom.test');
     expect(Hash::check('superadmin', $user->password))->toBeTrue();
+});
 
-    $env = file_get_contents($this->envPath);
-    // Default password should NOT be written to .env when user explicitly
-    // declined to set one — we wrote the literal "superadmin" so the user
-    // knows where it came from. Adjust this assertion if the policy changes.
-    expect($env)->toContain('SUPER_ADMIN_PASSWORD=superadmin');
+it('does NOT write any credentials to .env', function (): void {
+    // Point Laravel at a temp .env so we can read it back.
+    $envPath = sys_get_temp_dir().DIRECTORY_SEPARATOR.'superadmin-ensure-test-'.uniqid('', true).'.env';
+    file_put_contents($envPath, "APP_NAME=Test\n");
+    app()->useEnvironmentPath(dirname($envPath));
+    app()->loadEnvironmentFrom(basename($envPath));
+
+    try {
+        $this->artisan('superadmin:ensure', [
+            '--name' => 'Super Admin',
+            '--email' => 'never-in-env@aqarkom.test',
+            '--password' => 'never-in-env-pw',
+        ])->assertSuccessful();
+
+        $env = file_get_contents($envPath);
+        expect($env)->not->toContain('SUPER_ADMIN_EMAIL');
+        expect($env)->not->toContain('SUPER_ADMIN_PASSWORD');
+        expect($env)->not->toContain('never-in-env@aqarkom.test');
+        expect($env)->not->toContain('never-in-env-pw');
+    } finally {
+        @unlink($envPath);
+    }
 });

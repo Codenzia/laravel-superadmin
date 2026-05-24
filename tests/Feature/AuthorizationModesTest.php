@@ -22,7 +22,7 @@ beforeEach(function (): void {
     UserWithRoles::reset();
     config()->set('auth.providers.users.model', UserWithRoles::class);
     config()->set('superadmin.user_model', UserWithRoles::class);
-    config()->set('superadmin.role', 'super_admin');
+    config()->set('filament-shield.super_admin.name', 'super_admin');
     UserWithRoles::$rolesInDatabase = ['super_admin'];
     configureSuperAdmin('superadmin@aqarkom.test');
 
@@ -61,19 +61,6 @@ it('mode 2 (gate_before disabled): role is still assigned, but Gate::before does
     expect($result)->toBe(RoleAssignmentResult::Assigned);
     expect($user->hasRole('super_admin'))->toBeTrue();
     expect(Gate::forUser($user)->allows('do-anything'))->toBeFalse();
-});
-
-it('assignRole() returns NotConfigured when no role is configured', function (): void {
-    config()->set('superadmin.role', null);
-
-    $user = UserWithRoles::query()->create([
-        'name' => 'Admin',
-        'email' => 'superadmin@aqarkom.test',
-        'password' => Hash::make('pw-1234567890'),
-        'is_protected' => true,
-    ]);
-
-    expect(SuperAdmin::assignRole($user))->toBe(RoleAssignmentResult::NotConfigured);
 });
 
 it('assignRole() returns AlreadyAssigned on a second call', function (): void {

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Codenzia\SuperAdmin;
 
-use Codenzia\SuperAdmin\Console\Commands\SetupCommand;
+use Codenzia\SuperAdmin\Console\Commands\EnsureCommand;
 use Codenzia\SuperAdmin\Console\Commands\StatusCommand;
 use Codenzia\SuperAdmin\Observers\SuperAdminObserver;
 use Codenzia\SuperAdmin\Support\SuperAdminManager;
@@ -40,7 +40,7 @@ final class SuperAdminServiceProvider extends ServiceProvider
             $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
 
             $this->commands([
-                SetupCommand::class,
+                EnsureCommand::class,
                 StatusCommand::class,
             ]);
         }
@@ -143,7 +143,7 @@ final class SuperAdminServiceProvider extends ServiceProvider
                 $email = (string) $user->getAttribute('email');
                 $password = $manager->defaultPassword();
                 fwrite(STDOUT, "  ✓ Created protected super admin: {$email} (password: {$password})".PHP_EOL);
-                fwrite(STDOUT, '    Override anytime with `php artisan superadmin:setup` or by editing .env.'.PHP_EOL);
+                fwrite(STDOUT, '    Override defaults in your seeder via SuperAdmin::ensure([...]). Change later with `php artisan superadmin:ensure`.'.PHP_EOL);
             }
         });
     }

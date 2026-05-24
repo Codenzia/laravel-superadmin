@@ -46,16 +46,3 @@ it('handles null user gracefully (Gate::denies without acting user)', function (
     expect(Gate::denies('do-anything'))->toBeTrue();
 });
 
-it('also authorizes a user matched by email even without is_protected flag', function (): void {
-    config()->set('superadmin.authorization.gate_before', true);
-    configureSuperAdmin('match@aqarkom.test');
-
-    $user = User::query()->create([
-        'name' => 'Email Match Only',
-        'email' => 'match@aqarkom.test',
-        'password' => Hash::make('pw-1234567890'),
-        'is_protected' => false,
-    ]);
-
-    expect(Gate::forUser($user)->allows('do-anything'))->toBeTrue();
-});
