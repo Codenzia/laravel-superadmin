@@ -51,6 +51,9 @@
         }
     },
     "extra": {
+        "branch-alias": {
+            "dev-main": "0.4.x-dev"
+        },
         "laravel": {
             "providers": [
                 "Codenzia\\SuperAdmin\\SuperAdminServiceProvider"
