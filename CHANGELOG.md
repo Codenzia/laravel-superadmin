@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`SuperAdmin::isSuperAdmin(?Model $user): bool`** — the single fleet-wide "is this user a super admin?" check: true when the user is the protected super admin (`is()`) **or** holds the configured super-admin role (`hasConfiguredRole()`). Use this in panel gates / policies / navigation so the definition of "super admin" lives in one place.
+
+### Changed
+- **`IsSuperAdmin` trait's `$user->isSuperAdmin()` is now role-aware.** It delegates to `SuperAdmin::isSuperAdmin($this)` (protected account **or** the configured super-admin role) instead of only `SuperAdmin::is()` (protected account only), so the model method and the facade agree. Apps that key access purely on `is_protected` are unaffected (no super-admin role assigned → same result); apps that assign the `super_admin` role to non-protected users will now see those users counted as super-admins by `$user->isSuperAdmin()`. The `superAdmin()` / `exceptSuperAdmin()` query scopes are unchanged (still filter on the `is_protected` column).
+
 ## [0.4.0] - 2026-05-24
 
 ### BREAKING — identity moves out of `.env` and config

@@ -132,6 +132,22 @@ final class SuperAdminManager
         return is_string($userEmail) && mb_strtolower($userEmail) === $email;
     }
 
+    /**
+     * The fleet-wide "is this user a super admin?" check — true when the user is
+     * the protected super admin (see {@see is()}) OR holds the configured
+     * super-admin role (see {@see hasConfiguredRole()}). This is the single
+     * primitive callers (panel gates, policies, navigation) should use so the
+     * definition of "super admin" lives in one place.
+     */
+    public function isSuperAdmin(?Model $user): bool
+    {
+        if ($this->is($user)) {
+            return true;
+        }
+
+        return $this->hasConfiguredRole($user) === true;
+    }
+
     public function user(): ?Model
     {
         $model = $this->userModel();

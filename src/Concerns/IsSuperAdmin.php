@@ -11,7 +11,7 @@ trait IsSuperAdmin
 {
     public function isSuperAdmin(): bool
     {
-        return SuperAdmin::is($this);
+        return SuperAdmin::isSuperAdmin($this);
     }
 
     public function scopeSuperAdmin(Builder $query): Builder

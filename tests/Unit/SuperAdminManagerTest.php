@@ -41,6 +41,40 @@ it('handles null user without erroring', function (): void {
 });
 
 // ---------------------------------------------------------------------------
+// isSuperAdmin() — protected account OR the configured super-admin role
+// ---------------------------------------------------------------------------
+
+it('isSuperAdmin() is true for the protected super admin', function (): void {
+    expect(SuperAdmin::isSuperAdmin(createProtectedSuperAdmin()))->toBeTrue();
+});
+
+it('isSuperAdmin() is true for a user holding the configured role', function (): void {
+    config()->set('auth.providers.users.model', UserWithRoles::class);
+    config()->set('superadmin.user_model', UserWithRoles::class);
+    config()->set('filament-shield.super_admin.name', 'super_admin');
+    UserWithRoles::reset();
+
+    $user = UserWithRoles::query()->create([
+        'name' => 'Role Admin',
+        'email' => 'role-admin@aqarkom.test',
+        'password' => Hash::make('password-1234'),
+        'email_verified_at' => now(),
+        'is_protected' => false,
+    ]);
+    $user->assignRole('super_admin');
+
+    expect(SuperAdmin::isSuperAdmin($user))->toBeTrue();
+});
+
+it('isSuperAdmin() is false for a regular user with neither the flag nor the role', function (): void {
+    expect(SuperAdmin::isSuperAdmin(createUser('regular@aqarkom.test')))->toBeFalse();
+});
+
+it('isSuperAdmin() handles null without erroring', function (): void {
+    expect(SuperAdmin::isSuperAdmin(null))->toBeFalse();
+});
+
+// ---------------------------------------------------------------------------
 // userModel() — auth config resolution
 // ---------------------------------------------------------------------------
 

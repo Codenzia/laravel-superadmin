@@ -89,6 +89,17 @@ So `APP_URL=https://myshop.com` → `superadmin@myshop.com`. `APP_NAME="My Shop"
 
 When `bezhansalleh/filament-shield` is installed, `configuredRole()` auto-discovers Shield's super-admin role name from `filament-shield.super_admin.name`. Apps don't need to set the role name in two places. When Shield is not present, the package falls back to the literal `'super_admin'`.
 
+### "Is this user a super admin?" — `isSuperAdmin()`
+
+Use **`SuperAdmin::isSuperAdmin($user)`** as the one fleet-wide check. It returns `true` when the user is the protected account (`is()`) **or** holds the configured super-admin role (`hasConfiguredRole()`) — so role-based super-admins count, not just the protected row. The `IsSuperAdmin` trait's `$user->isSuperAdmin()` delegates to it, so the model method and the facade always agree.
+
+```php
+SuperAdmin::isSuperAdmin($user);   // protected account OR super_admin role
+SuperAdmin::is($user);             // strictly the protected account
+```
+
+Use `isSuperAdmin()` for access gates (who can reach an admin area); use `is()` when you specifically mean "this is *the* protected row" (e.g. guarding it from deletion).
+
 ## How protection works
 
 The package identifies the protected row via the `users.is_protected = true` DB column. v0.4.0+ removed the secondary email-match path since identity is no longer env-driven — the flag is the single source of truth, set by `install()` / `ensure()` and defended by the observer.
@@ -222,10 +233,12 @@ class User extends Authenticatable
 ```
 
 ```php
-$user->isSuperAdmin();                       // bool
+$user->isSuperAdmin();                       // bool — protected account OR super_admin role (delegates to the facade)
 User::query()->superAdmin()->first();        // WHERE is_protected = true
 User::query()->exceptSuperAdmin()->get();    // WHERE NOT is_protected
 ```
+
+> `$user->isSuperAdmin()` is role-aware (it calls `SuperAdmin::isSuperAdmin($this)`); the `superAdmin()` / `exceptSuperAdmin()` query scopes filter strictly on the `is_protected` column.
 
 ### UserPolicy
 
@@ -379,7 +392,7 @@ v0.3.0 was a **clean break**. The vendor-friction model is gone. Per-app upgrade
 - `Gate::before` authorization
 - Filament destructive-action hiding
 - `IsSuperAdmin` trait + query scopes
-- `SuperAdmin` facade — `is()`, `user()`, `exists()`, `install()`, `email()`, `userModel()`, `isConfigured()`, `assignRole()`, `hasConfiguredRole()`, `withoutProtection()`
+- `SuperAdmin` facade — `is()`, `isSuperAdmin()`, `user()`, `exists()`, `install()`, `email()`, `userModel()`, `isConfigured()`, `assignRole()`, `hasConfiguredRole()`, `withoutProtection()`
 - Facade methods: `ensure(?array)`, `defaultEmail()`, `defaultPassword()`, `defaultName()`
 
 ## Testing

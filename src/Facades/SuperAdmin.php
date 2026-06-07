@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\Facade;
  * @method static string|null userModel()
  * @method static bool isConfigured()
  * @method static bool is(?Model $user)
+ * @method static bool isSuperAdmin(?Model $user)
  * @method static Model|null user()
  * @method static bool exists()
  * @method static Model ensure(?array $defaults = null)
