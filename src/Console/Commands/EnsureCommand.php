@@ -71,9 +71,14 @@ final class EnsureCommand extends Command
         // ---- Password ----
         $password = $this->option('password');
         if (! is_string($password) || $password === '') {
-            $prompt = $existing !== null
-                ? 'Super admin password (leave blank to keep current)'
-                : 'Super admin password (leave blank to use default: '.$manager->defaultPassword().')';
+            if ($existing !== null) {
+                $prompt = 'Super admin password (leave blank to keep current)';
+            } else {
+                $knownDefault = $manager->knownDefaultPassword();
+                $prompt = $knownDefault !== null
+                    ? 'Super admin password (leave blank to use default: '.$knownDefault.')'
+                    : 'Super admin password (leave blank to generate a random one — claim later via the recovery route)';
+            }
             $entered = $this->secret($prompt);
             $password = is_string($entered) ? $entered : '';
         }

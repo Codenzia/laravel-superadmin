@@ -52,14 +52,49 @@ final class SuperAdminManager
     }
 
     /**
-     * Password used when none is passed via `ensure([...])`. Always returns
-     * the literal "superadmin" — memorable for local dev. Apps deploying to
-     * production must override via the seeder or rotate post-install via
-     * `php artisan superadmin:ensure`.
+     * The operator-set password from `superadmin.password` (env
+     * `SUPER_ADMIN_PASSWORD`), or null when not set. Honored in every
+     * environment, including production — the deliberate opt-in for
+     * vendor-controlled live demos.
+     */
+    public function configuredPassword(): ?string
+    {
+        $configured = $this->config()->get('superadmin.password');
+
+        return is_string($configured) && $configured !== '' ? $configured : null;
+    }
+
+    /**
+     * The default password when it is a KNOWN value, or null when the
+     * package would generate a random one (production, no override).
+     * Display-side callers (auto-install output, the `superadmin:ensure`
+     * prompt) use this so a random password is never echoed — each call to
+     * defaultPassword() in that mode returns a fresh random string, so
+     * printing it would show a password that was never stored.
+     */
+    public function knownDefaultPassword(): ?string
+    {
+        $configured = $this->configuredPassword();
+
+        if ($configured !== null) {
+            return $configured;
+        }
+
+        return $this->app->environment('production') ? null : 'superadmin';
+    }
+
+    /**
+     * Password used when none is passed via `ensure([...])`.
+     *
+     *   1. `superadmin.password` (env SUPER_ADMIN_PASSWORD) when set.
+     *   2. In production: a cryptographically random throwaway — nobody
+     *      knows it; the account is claimed via the recovery route or
+     *      `php artisan superadmin:ensure`.
+     *   3. Elsewhere: the literal "superadmin" — memorable for local dev.
      */
     public function defaultPassword(): string
     {
-        return 'superadmin';
+        return $this->knownDefaultPassword() ?? Str::password(40);
     }
 
     /**

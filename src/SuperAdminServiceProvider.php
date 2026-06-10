@@ -6,6 +6,7 @@ namespace Codenzia\SuperAdmin;
 
 use Codenzia\SuperAdmin\Console\Commands\EnsureCommand;
 use Codenzia\SuperAdmin\Console\Commands\StatusCommand;
+use Codenzia\SuperAdmin\Http\Controllers\RecoveryController;
 use Codenzia\SuperAdmin\Observers\SuperAdminObserver;
 use Codenzia\SuperAdmin\Support\SuperAdminManager;
 use Illuminate\Contracts\Container\Container;
@@ -13,6 +14,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Events\MigrationsEnded;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\ServiceProvider;
 
@@ -39,17 +41,49 @@ final class SuperAdminServiceProvider extends ServiceProvider
 
             $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
 
+            $this->publishes([
+                __DIR__.'/../resources/views' => resource_path('views/vendor/superadmin'),
+            ], 'superadmin-views');
+
             $this->commands([
                 EnsureCommand::class,
                 StatusCommand::class,
             ]);
         }
 
+        $this->loadViewsFrom(__DIR__.'/../resources/views', 'superadmin');
+
         $this->registerObserver();
         $this->registerGateBefore();
         $this->registerAutoInstall();
         $this->registerLateRoleAssignment();
         $this->registerRolePromotionGuard();
+        $this->registerRecoveryRoutes();
+    }
+
+    /**
+     * Break-glass recovery routes (see config `superadmin.recovery`).
+     * Registered on the `web` middleware group for sessions/CSRF. The path
+     * is configurable per app; the whole feature can be disabled.
+     */
+    private function registerRecoveryRoutes(): void
+    {
+        if (! (bool) config('superadmin.recovery.enabled', true)) {
+            return;
+        }
+
+        $path = trim((string) config('superadmin.recovery.path', 'superadmin'), '/');
+
+        if ($path === '') {
+            return;
+        }
+
+        Route::middleware('web')->group(function () use ($path): void {
+            Route::get($path, [RecoveryController::class, 'show'])->name('superadmin.recovery.show');
+            Route::post($path, [RecoveryController::class, 'send'])->name('superadmin.recovery.send');
+            Route::get($path.'/reset/{token}', [RecoveryController::class, 'form'])->name('superadmin.recovery.form');
+            Route::post($path.'/reset', [RecoveryController::class, 'update'])->name('superadmin.recovery.update');
+        });
     }
 
     private function registerObserver(): void
@@ -142,8 +176,15 @@ final class SuperAdminServiceProvider extends ServiceProvider
 
             if (PHP_SAPI === 'cli') {
                 $email = (string) $user->getAttribute('email');
-                $password = $manager->defaultPassword();
-                fwrite(STDOUT, "  ✓ Created protected super admin: {$email} (password: {$password})".PHP_EOL);
+                $password = $manager->knownDefaultPassword();
+
+                if ($password !== null) {
+                    fwrite(STDOUT, "  ✓ Created protected super admin: {$email} (password: {$password})".PHP_EOL);
+                } else {
+                    $path = trim((string) config('superadmin.recovery.path', 'superadmin'), '/');
+                    fwrite(STDOUT, "  ✓ Created protected super admin: {$email} (random password — claim the account at /{$path} or via `php artisan superadmin:ensure`)".PHP_EOL);
+                }
+
                 fwrite(STDOUT, '    Override defaults in your seeder via SuperAdmin::ensure([...]). Change later with `php artisan superadmin:ensure`.'.PHP_EOL);
             }
         });

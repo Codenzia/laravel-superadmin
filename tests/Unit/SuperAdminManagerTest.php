@@ -316,17 +316,17 @@ it('defaultEmail() never bakes in a vendor domain', function (): void {
 });
 
 // ---------------------------------------------------------------------------
-// defaultPassword() / defaultName() — hardcoded in v0.4.0
+// defaultPassword() / defaultName() — see also Unit/PasswordResolutionTest
 // ---------------------------------------------------------------------------
 
-it('defaultPassword() returns the literal "superadmin"', function (): void {
+it('defaultPassword() returns the literal "superadmin" outside production', function (): void {
     expect(SuperAdmin::defaultPassword())->toBe('superadmin');
 });
 
-it('defaultPassword() ignores any stale superadmin.password config in v0.4.0', function (): void {
-    config()->set('superadmin.password', 'should-be-ignored');
+it('defaultPassword() honors the superadmin.password override', function (): void {
+    config()->set('superadmin.password', 'operator-override');
 
-    expect(SuperAdmin::defaultPassword())->toBe('superadmin');
+    expect(SuperAdmin::defaultPassword())->toBe('operator-override');
 });
 
 it('defaultName() returns the literal "Super Admin"', function (): void {

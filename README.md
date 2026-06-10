@@ -13,7 +13,8 @@
 
 ## What you get
 
-- A **single protected user** that is auto-created on first `migrate`. Default email derived from `APP_URL` / `APP_NAME`. Default password `superadmin`.
+- A **single protected user** that is auto-created on first `migrate`. Default email derived from `APP_URL` / `APP_NAME`. Default password: `SUPER_ADMIN_PASSWORD` env when set; otherwise `superadmin` locally and a **random throwaway in production** (claim via the recovery route).
+- A **break-glass recovery route** (`/superadmin`, configurable) that emails a single-use reset link to the protected account's own mailbox — throttled, logged, leaks nothing, and independent of the host app's password-reset scaffolding.
 - An **Eloquent observer** that blocks deletion, email changes, **unprotect attempts (`true → false`)**, and **mass-assignment privilege escalation (`false → true`)** on the `is_protected` flag.
 - A **`Gate::before` hook** so the super admin authorizes for every ability — works without Spatie, Shield, or any policies wired up.
 - **Late role assignment.** Solves the `MigrationsEnded` vs Spatie-Role-row race: when `spatie/laravel-permission` is in use, the `super_admin` role row often doesn't exist yet at auto-install time, so the role would silently fail to attach. A wildcard `eloquent.created` listener retroactively assigns the configured role the moment the row appears in a later seeder run. Idempotent and best-effort; no-ops cleanly when Spatie isn't installed.
@@ -30,11 +31,19 @@ php artisan migrate
 # Override defaults in your seeder via SuperAdmin::ensure([...]). Change later with `php artisan superadmin:ensure`.
 ```
 
+In production (no `SUPER_ADMIN_PASSWORD` set) the password is a random throwaway instead, and the output points you at the recovery route:
+
+```bash
+# ✓ Created protected super admin: superadmin@<your-host> (random password — claim the account at /superadmin or via `php artisan superadmin:ensure`)
+```
+
 That's the whole install. The package listens to `MigrationsEnded` and creates the protected user once, if and only if no protected user exists. Re-running `migrate` is a no-op.
 
-### Override the defaults — two paths
+### Override the defaults — three paths
 
-v0.4.0+ keeps identity fields (name / email / password) out of `.env` and config entirely. Plaintext credentials never live on the host filesystem. Two override paths:
+Three override paths:
+
+**(0) Set `SUPER_ADMIN_PASSWORD` in `.env`** — honored in every environment, including production. The deliberate opt-in for local dev and vendor-controlled live demos (e.g. `task-off.codenzia.com`) where you want a known password on a production-mode host. Real customer deployments should NOT set it — see [Password defaults & the recovery route](#password-defaults--the-recovery-route).
 
 **(1) Pin the values in your seeder** — runs every `migrate:fresh --seed` / on first install:
 
@@ -74,7 +83,29 @@ php artisan superadmin:ensure --email=admin@your-app.test --password='your-stron
 
 `superadmin:ensure` never reads or writes `.env`. Plaintext only lives in the seeder source (committed to your repo with code) or in the operator's terminal during rotation.
 
-> **Production password warning.** The default `superadmin` is deliberately memorable for local dev and internal use. **Always** override via the seeder or rotate via `superadmin:ensure` before exposing the app to anyone.
+## Password defaults & the recovery route
+
+When nothing supplies a password (no seeder override, no `SUPER_ADMIN_PASSWORD`), the create-time default depends on the environment:
+
+| Environment | Default password |
+|---|---|
+| `production` | a **cryptographically random throwaway nobody knows** |
+| anything else (local, staging, testing) | the literal `superadmin` — zero-touch dev |
+
+A production install therefore never sits behind a publicly documented credential. You claim the account through the recovery route:
+
+```
+GET  /superadmin               one-button page: email me a reset link
+POST /superadmin               sends the link to the protected account's own mailbox
+GET  /superadmin/reset/{token} choose-a-new-password form (token single-use)
+POST /superadmin/reset         applies it
+```
+
+Security model: the send endpoint **only ever emails the protected account's own address** and responds identically whether or not the account exists — a guessable URL leaks nothing and can at worst add noise to your own mailbox. All endpoints share a per-IP and a global rate limit (3/hour per IP, 10/hour app-wide by default), and every request is logged (`Super admin recovery link requested.`) so you can monitor probing. The reset email names the app and host, so an unsolicited link doubles as an alert.
+
+The flow is self-contained — it does not use the host's `password.reset` route, so it works on Filament-only apps with no auth scaffolding. Configure or disable it via `superadmin.recovery` (path, throttle, `SUPER_ADMIN_RECOVERY=false`). Views are publishable via `--tag=superadmin-views`.
+
+Because the default email is `superadmin@<your-host>`, make sure that mailbox (or a catch-all on the domain) is deliverable to you in production — it is the recovery anchor.
 
 ## Default email resolution
 
@@ -157,13 +188,25 @@ The package config is small. After `php artisan vendor:publish --tag=superadmin-
 
 ```php
 return [
-    // v0.4.0+: identity (name / email / password / role) is NOT in this
-    // config and NOT in env. See "Override the defaults" above — defaults
-    // are seeder-driven via SuperAdmin::ensure([...]) or derived.
+    // Optional password override — honored in EVERY environment, including
+    // production. For local dev and vendor-controlled live demos. When not
+    // set: random in production, "superadmin" elsewhere.
+    'password'              => env('SUPER_ADMIN_PASSWORD'),
+
+    // Break-glass recovery flow — see "Password defaults & the recovery route".
+    'recovery' => [
+        'enabled'  => env('SUPER_ADMIN_RECOVERY', true),
+        'path'     => env('SUPER_ADMIN_RECOVERY_PATH', 'superadmin'),
+        'throttle' => ['max_attempts' => 3, 'global_max_attempts' => 10, 'decay_seconds' => 3600],
+    ],
+
     'user_model'            => null,                                              // null = resolved from auth.providers
     'auto_install'          => env('SUPER_ADMIN_AUTO_INSTALL', true),             // create user on MigrationsEnded
     'authorization'         => ['gate_before' => true],                           // super admin passes every can()
-    'protection'            => ['enabled' => env('SUPER_ADMIN_PROTECTION', true)],
+    'protection'            => [
+        'enabled' => env('SUPER_ADMIN_PROTECTION', true),
+        'prevent_role_promotion' => env('SUPER_ADMIN_PREVENT_ROLE_PROMOTION', true), // only the protected row may hold super_admin
+    ],
     'late_role_assignment'  => env('SUPER_ADMIN_LATE_ROLE_ASSIGNMENT', true),     // attach role when row appears later
     'filament' => [
         'hide_destructive_actions' => true,                                       // master switch for the Filament plugin
@@ -328,6 +371,8 @@ The package never creates the role row, defines permissions, or installs Shield 
 
 ## What's new since 0.3.0
 
+**Unreleased (0.5.0).** **Production-safe password defaults** — random throwaway in production when nothing supplies a password, `superadmin` elsewhere. **`SUPER_ADMIN_PASSWORD` returns** as an explicit opt-in honored in every environment (local dev + vendor-controlled live demos). **Break-glass recovery route** (`/superadmin`) — throttled, logged, single-use emailed reset link to the protected account's own mailbox. **Role-promotion guard** — only the protected row may hold the configured super-admin role.
+
 **0.3.2 (2026-05-22).** Adds **late role assignment** for the `MigrationsEnded`-vs-Spatie-Role-row race, and **Filament auto-lock** for the protected user row: every consumer app now auto-hides destructive row actions and auto-disables privileged form fields with no per-resource code. New config keys: `late_role_assignment`, `filament.hidden_action_names`, `filament.locked_field_names`. Tests grew from 84 to 105.
 
 **0.3.1 (2026-05-21).** **Security:** the observer now blocks `is_protected: false → true` promotion via Eloquent update (mass-assignment privilege escalation defense). Previously only the downgrade direction was guarded. Also cleans up three stale `protection.block_*` config reads that were documented as removed in 0.3.0 but never deleted from the observer code.
@@ -347,7 +392,7 @@ v0.4.0 moves identity (name / email / password / role) entirely out of `.env` an
        'password' => 'your-strong-password',    // was: SUPER_ADMIN_PASSWORD
    ]);
    ```
-3. Delete `SUPER_ADMIN_PASSWORD`, `SUPER_ADMIN_EMAIL`, `SUPER_ADMIN_ROLE`, `SUPER_ADMIN_NAME` from every `.env` and `.env.example`. These env vars are no longer honored — leaving them set is harmless but stale.
+3. Delete `SUPER_ADMIN_PASSWORD`, `SUPER_ADMIN_EMAIL`, `SUPER_ADMIN_ROLE`, `SUPER_ADMIN_NAME` from every `.env` and `.env.example`. These env vars are no longer honored — leaving them set is harmless but stale. *(0.5.0 reintroduces `SUPER_ADMIN_PASSWORD` only, as a deliberate opt-in — see [Password defaults & the recovery route](#password-defaults--the-recovery-route).)*
 4. If you publish the package config: delete the `email`, `password`, `role` keys from `config/superadmin.php`. They're no longer read.
 5. Update any callers of `php artisan superadmin:setup` to `php artisan superadmin:ensure`. The old command name was removed.
 6. If you use Filament Shield: nothing to do — `configuredRole()` now auto-discovers `filament-shield.super_admin.name`.

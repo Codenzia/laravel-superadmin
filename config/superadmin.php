@@ -9,21 +9,78 @@ return [
     | Identity (name / email / password / role)
     |--------------------------------------------------------------------------
     |
-    | None of the super-admin's identity attributes live in this config or in
-    | environment variables. Identity is either passed by the host seeder via
+    | Identity is either passed by the host seeder via
     | `SuperAdmin::ensure([...])` or derived by the package:
     |
     |   - name     → "Super Admin" (default) or seeder override
     |   - email    → superadmin@<APP_URL host> → superadmin@<APP_NAME slug>.local
     |                or seeder override
-    |   - password → "superadmin" (default) or seeder override
+    |   - password → see `password` below
     |   - role     → filament-shield.super_admin.name (auto-discovered) →
     |                "super_admin" (fallback)
     |
-    | Post-seed credential changes go through `php artisan superadmin:ensure`,
-    | which updates the DB row only — it never touches `.env`.
+    | Post-seed credential changes go through `php artisan superadmin:ensure`
+    | (DB-only, never touches `.env`) or the recovery route below.
     |
     */
+
+    /*
+    |--------------------------------------------------------------------------
+    | Password Override
+    |--------------------------------------------------------------------------
+    |
+    | Optional. When set, this password is used whenever the package creates
+    | the super admin (auto-install, argless `ensure()`, blank prompt in
+    | `superadmin:ensure`) — in every environment, including production.
+    | Intended for local dev and vendor-controlled live demos.
+    |
+    | When NOT set, the create-time default depends on the environment:
+    |
+    |   - production     → a random throwaway password nobody knows. Claim
+    |                      the account via the recovery route below or
+    |                      `php artisan superadmin:ensure`.
+    |   - anything else  → the literal "superadmin" (zero-touch local dev).
+    |
+    */
+
+    'password' => env('SUPER_ADMIN_PASSWORD'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Recovery Route
+    |--------------------------------------------------------------------------
+    |
+    | A self-contained break-glass flow to set/reset the super admin password
+    | at any time without CLI access:
+    |
+    |   GET  /{path}               one-button page: email me a reset link
+    |   POST /{path}               sends the link to the protected account's
+    |                              own mailbox (response is identical whether
+    |                              or not the account exists — leaks nothing)
+    |   GET  /{path}/reset/{token} choose-a-new-password form
+    |   POST /{path}/reset         applies it (token is single-use)
+    |
+    | The route only ever emails the protected account's own address, so a
+    | guessable URL is harmless — worst case is mailbox noise, which the
+    | throttle below caps. Every request is logged for monitoring. Does not
+    | depend on the host app's own password-reset scaffolding (works on
+    | Filament-only apps with no `password.reset` route).
+    |
+    */
+
+    'recovery' => [
+        'enabled' => (bool) env('SUPER_ADMIN_RECOVERY', true),
+
+        'path' => env('SUPER_ADMIN_RECOVERY_PATH', 'superadmin'),
+
+        // Max requests per IP within the decay window, plus an app-wide cap
+        // shared by all IPs (stops distributed probing).
+        'throttle' => [
+            'max_attempts' => 3,
+            'global_max_attempts' => 10,
+            'decay_seconds' => 3600,
+        ],
+    ],
 
     /*
     |--------------------------------------------------------------------------
