@@ -83,6 +83,14 @@ return [
 
     'protection' => [
         'enabled' => (bool) env('SUPER_ADMIN_PROTECTION', true),
+
+        /*
+        | When true (default), prevents any user other than the protected super
+        | admin from being assigned the super_admin role via Eloquent's pivot
+        | events (syncRoles, assignRole, etc.). Throws ProtectedAccountException
+        | before the pivot write, so the DB is never in a bad state.
+        */
+        'prevent_role_promotion' => (bool) env('SUPER_ADMIN_PREVENT_ROLE_PROMOTION', true),
     ],
 
     /*

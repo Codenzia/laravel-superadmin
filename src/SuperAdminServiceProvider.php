@@ -49,6 +49,7 @@ final class SuperAdminServiceProvider extends ServiceProvider
         $this->registerGateBefore();
         $this->registerAutoInstall();
         $this->registerLateRoleAssignment();
+        $this->registerRolePromotionGuard();
     }
 
     private function registerObserver(): void
@@ -208,6 +209,64 @@ final class SuperAdminServiceProvider extends ServiceProvider
             // Best-effort: assignRole() handles "already has it" and
             // swallows failures (RoleAssignmentResult::Failed). Safe to call.
             $manager->assignRole($user);
+        });
+    }
+
+    /**
+     * Prevent any user other than the protected super admin from being assigned
+     * the super_admin role via Eloquent pivot operations (syncRoles, assignRole,
+     * roles()->attach(), etc.).
+     *
+     * Hooks into the `eloquent.pivotAttaching` wildcard event which fires
+     * before Spatie's BelongsToMany writes the model_has_roles pivot row.
+     * Throws ProtectedAccountException so the DB is never left in a bad state.
+     *
+     * Protected by `superadmin.protection.prevent_role_promotion` (default true)
+     * and skipped when the protection bypass is active (e.g. during install).
+     */
+    private function registerRolePromotionGuard(): void
+    {
+        if (! config('superadmin.protection.prevent_role_promotion', true)) {
+            return;
+        }
+
+        /** @var SuperAdminManager $manager */
+        $manager = $this->app->make(SuperAdminManager::class);
+
+        Event::listen('eloquent.pivotAttaching: *', function (string $event, array $payload) use ($manager): void {
+            if ($manager->isProtectionBypassed()) {
+                return;
+            }
+
+            /** @var Model $user */
+            $user = $payload[0] ?? null;
+            $relationName = $payload[1] ?? null;
+
+            if (! $user instanceof Model || $relationName !== 'roles') {
+                return;
+            }
+
+            // Already the protected account — allowed (e.g. late role assignment).
+            if ((bool) $user->getAttribute('is_protected')) {
+                return;
+            }
+
+            $roleClass = $this->resolveRoleModel();
+            if ($roleClass === null) {
+                return;
+            }
+
+            $configuredRole = $manager->configuredRole();
+            if ($configuredRole === null) {
+                return;
+            }
+
+            $attachingIds = (array) ($payload[2] ?? []);
+            $superAdminRoleId = $roleClass::where('name', $configuredRole)->value('id');
+
+            if ($superAdminRoleId !== null && in_array($superAdminRoleId, $attachingIds, false)) {
+                throw \Codenzia\SuperAdmin\Exceptions\ProtectedAccountException::cannotAssignSuperAdminRole();
+            }
         });
     }
 

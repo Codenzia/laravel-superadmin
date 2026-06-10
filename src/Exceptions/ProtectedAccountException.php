@@ -30,4 +30,9 @@ final class ProtectedAccountException extends RuntimeException
             .'This guards against mass-assignment privilege escalation on regular accounts.'
         );
     }
+
+    public static function cannotAssignSuperAdminRole(): self
+    {
+        return new self('The super_admin role can only be held by the protected super admin account.');
+    }
 }
