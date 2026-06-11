@@ -5,6 +5,12 @@ All notable changes to `codenzia/laravel-superadmin` will be documented in this 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-06-11
+
+### Fixed
+- **`install()` now survives hosts that guard `is_protected` against mass assignment.** It previously used `create()`/`fill()`, so models following the package's own hardening advice (`protected $guarded = [..., 'is_protected']` — e.g. toolenza) silently created the account UNPROTECTED. Provisioning now uses `forceFill()` on both create and update paths.
+- **`install()` claims an existing non-protected row holding the target email** (case-insensitive, ignoring host global scopes) instead of crashing on the users.email unique constraint. This also self-repairs accounts broken by the guarded-model bug above: the next `ensure()` promotes the row back to protected.
+
 ## [0.5.0] - 2026-06-11
 
 ### Changed

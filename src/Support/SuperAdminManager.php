@@ -261,8 +261,8 @@ final class SuperAdminManager
         }
 
         $password = $defaults['password'] ?? null;
-        $email    = $defaults['email']    ?? null;
-        $name     = $defaults['name']     ?? $this->defaultName();
+        $email = $defaults['email'] ?? null;
+        $name = $defaults['name'] ?? $this->defaultName();
 
         return $this->install($password, $email, $name);
     }
@@ -290,7 +290,11 @@ final class SuperAdminManager
         $email ??= $this->defaultEmail();
 
         return $this->withoutProtection(function () use ($model, $email, $password, $name): Model {
-            $existing = $this->user();
+            // Prefer the protected row; fall back to claiming an existing
+            // (non-protected) account that already holds the target email —
+            // repairs hosts where a guarded model once dropped the flag, and
+            // avoids a unique-constraint crash on the insert below.
+            $existing = $this->user() ?? $this->findByEmail($model, $email);
 
             $attributes = [
                 'name' => $name,
@@ -298,15 +302,22 @@ final class SuperAdminManager
                 'is_protected' => true,
             ];
 
+            // forceFill throughout: this is the trusted provisioning path, and
+            // hosts are *encouraged* to guard is_protected against mass
+            // assignment — create()/fill() would silently drop the flag there.
             if ($existing === null) {
                 $attributes['password'] = Hash::make($password ?? $this->defaultPassword());
                 $attributes['email_verified_at'] = now();
-                $instance = $model::query()->create($attributes);
+
+                /** @var Model $instance */
+                $instance = new $model;
+                $instance->forceFill($attributes)->save();
+                $instance = $instance->fresh() ?? $instance;
             } else {
                 if ($password !== null) {
                     $attributes['password'] = Hash::make($password);
                 }
-                $existing->fill($attributes)->save();
+                $existing->forceFill($attributes)->save();
                 $instance = $existing->fresh();
             }
 
@@ -316,6 +327,24 @@ final class SuperAdminManager
 
             return $instance;
         });
+    }
+
+    /**
+     * Case-insensitive email lookup, ignoring protection state AND host
+     * global scopes (provisioning context — a scope like "approved only"
+     * must not hide the row install() needs to claim).
+     *
+     * @param  class-string<Model>  $model
+     */
+    private function findByEmail(string $model, string $email): ?Model
+    {
+        /** @var Model $instance */
+        $instance = new $model;
+
+        return $model::query()
+            ->withoutGlobalScopes()
+            ->whereRaw('LOWER('.$instance->getConnection()->getQueryGrammar()->wrap('email').') = ?', [mb_strtolower($email)])
+            ->first();
     }
 
     /**
