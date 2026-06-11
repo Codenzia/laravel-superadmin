@@ -24,13 +24,15 @@ final class StatusCommand extends Command
 
     public function handle(SuperAdminManager $manager): int
     {
-        $email = $manager->email() ?: $manager->defaultEmail();
         $exists = $manager->exists();
         $user = $exists ? $manager->user() : null;
+        // Show the actual account's email when it exists; the creation
+        // default is only meaningful while the account is still missing.
+        $email = $user?->getAttribute('email') ?? ($manager->email() ?: $manager->defaultEmail());
         $verbose = $this->getOutput()->isVerbose();
 
         $rows = [
-            ['Configured email', $email],
+            ['Email', $email],
             ['User model', $manager->userModel() ?? '<not resolved>'],
             ['Account exists', $exists ? 'yes' : 'NO'],
         ];

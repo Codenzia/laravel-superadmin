@@ -235,36 +235,35 @@ return [
 ];
 ```
 
-## Seeder integration
+## Seeder integration — the Codenzia standard
 
-`SuperAdmin::ensure()` is the seeder-safe primitive. Two modes:
+**Seeders never carry superadmin credentials.** The package owns identity end-to-end: auto-install on `migrate`, `superadmin@codenzia.com`, `SUPER_ADMIN_PASSWORD` env (or `superadmin` outside production / random in production), `/superadmin` recovery. The contract per app:
+
+- **Standard seeder** (`DatabaseSeeder` / `SystemSeeder`): roles and permissions only. Does not create, update, or print the super admin.
+- **DemoSeeder**: may call the **argless** `SuperAdmin::ensure()` when it needs the row, followed by app-specific attribute fixups — which carry no credentials:
 
 ```php
 use Codenzia\SuperAdmin\Facades\SuperAdmin;
 
-class DatabaseSeeder extends Seeder
+class DemoSeeder extends Seeder
 {
     public function run(): void
     {
-        // (a) No args — idempotent get-or-create.
-        //     Returns the existing protected user, or creates one with
-        //     defaultName() / defaultEmail() / defaultPassword().
+        // Idempotent get-or-create; credentials are package-managed.
         $superAdmin = SuperAdmin::ensure();
-
-        // (b) With array — force-applies the supplied fields. Use this
-        //     to pin app-specific values that survive every reseed.
-        $superAdmin = SuperAdmin::ensure([
-            'name'     => 'Super Admin',
-            'email'    => 'admin@your-app.test',
-            'password' => 'your-strong-password',
-        ]);
+        $superAdmin->update(['status' => 'approved', 'is_active' => true]);
     }
 }
 ```
 
-You don't strictly need the no-args call — the `MigrationsEnded` auto-install already handles fresh installs. The array form is the recommended pattern when a project wants stable, repo-tracked superadmin credentials across all of its environments.
+- **Credential output**: only a DemoSeeder may print logins. For the super admin row, print the live values, never a literal: `[$superAdmin->email, env('SUPER_ADMIN_PASSWORD', 'superadmin')]`.
+- **`.env.example`**: document the two knobs:
+  ```
+  # SUPER_ADMIN_EMAIL=superadmin@codenzia.com
+  # SUPER_ADMIN_PASSWORD=   # set on live-demo hosts; unset in production (random + /superadmin recovery)
+  ```
 
-For raw create/update with explicit credentials, use `SuperAdmin::install($password, $email, $name)`.
+The array form `SuperAdmin::ensure(['name' => ..., 'email' => ..., 'password' => ...])` still exists as an escape hatch (it force-applies the supplied fields), but committing credentials to a seeder defeats the model — don't use it in Codenzia repos. For raw create/update use `SuperAdmin::install($password, $email, $name)`.
 
 ## Integration patterns
 
@@ -377,7 +376,7 @@ The package never creates the role row, defines permissions, or installs Shield 
 
 ## What's new since 0.3.0
 
-**Unreleased (0.5.0).** **Production-safe password defaults** — random throwaway in production when nothing supplies a password, `superadmin` elsewhere. **`SUPER_ADMIN_PASSWORD` returns** as an explicit opt-in honored in every environment (local dev + vendor-controlled live demos). **Break-glass recovery route** (`/superadmin`) — throttled, logged, single-use emailed reset link to the protected account's own mailbox. **Role-promotion guard** — only the protected row may hold the configured super-admin role.
+**0.5.0 (2026-06-11).** **Production-safe password defaults** — random throwaway in production when nothing supplies a password, `superadmin` elsewhere. **`SUPER_ADMIN_PASSWORD` returns** as an explicit opt-in honored in every environment (local dev + vendor-controlled live demos). **Break-glass recovery route** (`/superadmin`) — throttled, logged, single-use emailed reset link to the protected account's own mailbox. **Role-promotion guard** — only the protected row may hold the configured super-admin role.
 
 **0.3.2 (2026-05-22).** Adds **late role assignment** for the `MigrationsEnded`-vs-Spatie-Role-row race, and **Filament auto-lock** for the protected user row: every consumer app now auto-hides destructive row actions and auto-disables privileged form fields with no per-resource code. New config keys: `late_role_assignment`, `filament.hidden_action_names`, `filament.locked_field_names`. Tests grew from 84 to 105.
 

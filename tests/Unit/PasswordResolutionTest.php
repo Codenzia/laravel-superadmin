@@ -21,8 +21,14 @@ it('honors the configured password override even in production', function (): vo
     config()->set('superadmin.password', 'live-demo-pw');
     app()->detectEnvironment(fn (): string => 'production');
 
-    expect(passwordManager()->knownDefaultPassword())->toBe('live-demo-pw')
-        ->and(passwordManager()->defaultPassword())->toBe('live-demo-pw');
+    try {
+        expect(passwordManager()->knownDefaultPassword())->toBe('live-demo-pw')
+            ->and(passwordManager()->defaultPassword())->toBe('live-demo-pw');
+    } finally {
+        // Restore — Testbench's teardown runs migrate:rollback, which would
+        // prompt for confirmation in a production environment.
+        app()->detectEnvironment(fn (): string => 'testing');
+    }
 });
 
 it('defaults to the literal superadmin outside production', function (): void {
@@ -37,13 +43,19 @@ it('generates a random password in production with no override', function (): vo
     config()->set('superadmin.password', null);
     app()->detectEnvironment(fn (): string => 'production');
 
-    $first = passwordManager()->defaultPassword();
-    $second = passwordManager()->defaultPassword();
+    try {
+        $first = passwordManager()->defaultPassword();
+        $second = passwordManager()->defaultPassword();
 
-    expect(passwordManager()->knownDefaultPassword())->toBeNull()
-        ->and($first)->not->toBe('superadmin')
-        ->and(mb_strlen($first))->toBeGreaterThanOrEqual(40)
-        ->and($first)->not->toBe($second);
+        expect(passwordManager()->knownDefaultPassword())->toBeNull()
+            ->and($first)->not->toBe('superadmin')
+            ->and(mb_strlen($first))->toBeGreaterThanOrEqual(40)
+            ->and($first)->not->toBe($second);
+    } finally {
+        // Restore — Testbench's teardown runs migrate:rollback, which would
+        // prompt for confirmation in a production environment.
+        app()->detectEnvironment(fn (): string => 'testing');
+    }
 });
 
 it('treats an empty env override as unset', function (): void {

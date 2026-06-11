@@ -198,7 +198,7 @@ it('ensure() creates the superadmin from defaults when none exists', function ()
 
     $user = SuperAdmin::ensure();
 
-    expect($user->email)->toBe('superadmin@myshop.test');
+    expect($user->email)->toBe('superadmin@codenzia.com');
     expect((bool) $user->is_protected)->toBeTrue();
     expect(Hash::check('superadmin', $user->password))->toBeTrue();
 });
@@ -234,7 +234,7 @@ it('ensure([password]) creates a new user with the supplied password', function 
 
     expect((bool) $user->is_protected)->toBeTrue();
     expect(Hash::check('seeder-supplied-pw', $user->password))->toBeTrue();
-    expect($user->email)->toBe('superadmin@acme.test');
+    expect($user->email)->toBe('superadmin@codenzia.com');
     expect($user->name)->toBe('Super Admin');
 });
 
@@ -270,8 +270,8 @@ it('ensure([name]) updates only the name', function (): void {
 
 it('ensure([name, email, password]) applies all three on create', function (): void {
     $user = SuperAdmin::ensure([
-        'name'     => 'Seeder Admin',
-        'email'    => 'seed@acme.test',
+        'name' => 'Seeder Admin',
+        'email' => 'seed@acme.test',
         'password' => 'seed-pw-1234',
     ]);
 

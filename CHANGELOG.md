@@ -5,7 +5,10 @@ All notable changes to `codenzia/laravel-superadmin` will be documented in this 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.5.0] - 2026-06-11
+
+### Changed
+- **`superadmin:status` shows the actual account email** when the account exists (row renamed `Configured email` → `Email`); the creation default is only shown while the account is missing.
 
 ### Added
 - **Stable default email: `superadmin@codenzia.com`.** `defaultEmail()` now reads `superadmin.email` (env `SUPER_ADMIN_EMAIL`, default `superadmin@codenzia.com`) before falling back to the 0.4.0 host-derived forms (`superadmin@<APP_URL host>` → `superadmin@<slug>.local`). One vendor mailbox receives every recovery link across the fleet instead of a per-host address. Creation default only — identification stays strictly on `is_protected`, so registering the well-known address grants nothing. Non-Codenzia consumers set `SUPER_ADMIN_EMAIL` to their own domain (or empty it to restore host-derived emails).
