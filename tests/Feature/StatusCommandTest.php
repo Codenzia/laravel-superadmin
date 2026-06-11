@@ -19,6 +19,31 @@ it('reports healthy state when the protected user exists', function (): void {
         ->assertExitCode(0);
 });
 
+it('shows the verified default password in the summary table', function (): void {
+    createProtectedSuperAdmin(password: 'superadmin');
+
+    $this->artisan('superadmin:status')
+        ->expectsOutputToContain('superadmin (default)')
+        ->assertExitCode(0);
+});
+
+it('shows the rotated hint instead of a stale password', function (): void {
+    createProtectedSuperAdmin(password: 'rotated-by-operator-99');
+
+    $this->artisan('superadmin:status')
+        ->expectsOutputToContain('rotated/unknown')
+        ->assertExitCode(0);
+});
+
+it('labels an env-managed password as such', function (): void {
+    config()->set('superadmin.password', 'demo-host-pw');
+    createProtectedSuperAdmin(password: 'demo-host-pw');
+
+    $this->artisan('superadmin:status')
+        ->expectsOutputToContain('demo-host-pw (from SUPER_ADMIN_PASSWORD)')
+        ->assertExitCode(0);
+});
+
 it('displays the is_protected flag value in the summary table', function (): void {
     configureSuperAdmin();
     createProtectedSuperAdmin();

@@ -168,7 +168,7 @@ class User extends Authenticatable
 | Command | Purpose |
 |---|---|
 | `superadmin:ensure` | Create or update the protected user. **DB-only — never reads or writes `.env`.** Interactive prompts for name / email / password; pass any subset as flags to skip prompts. |
-| `superadmin:status` | Summary of the protected user. Exits non-zero if missing. |
+| `superadmin:status` | Summary of the protected user — **the one place credentials are displayed on demand**. The Password row is verified against the stored hash: it shows the working default/env value, or "rotated/unknown" with the recovery paths. Never prints a stale or random password. Exits non-zero if missing. |
 | `superadmin:status --verbose` | Adds the full health diagnostic matrix (model resolvable, column exists, protection enabled, role assigned, etc.). |
 
 ```bash
@@ -256,7 +256,7 @@ class DemoSeeder extends Seeder
 }
 ```
 
-- **Credential output**: only a DemoSeeder may print logins. For the super admin row, print the live values, never a literal: `[$superAdmin->email, env('SUPER_ADMIN_PASSWORD', 'superadmin')]`.
+- **Credential output**: apps print NOTHING about the super admin — not in seeders, not in demo tables. The package owns all credential display: the creation line on `migrate`, and `php artisan superadmin:status` on demand (hash-verified, can't go stale). Demo seeders may still print their own demo accounts (agents, customers, …).
 - **`.env.example`**: document the two knobs:
   ```
   # SUPER_ADMIN_EMAIL=superadmin@codenzia.com

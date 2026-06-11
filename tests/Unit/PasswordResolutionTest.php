@@ -64,3 +64,26 @@ it('treats an empty env override as unset', function (): void {
     expect(passwordManager()->configuredPassword())->toBeNull()
         ->and(passwordManager()->knownDefaultPassword())->toBe('superadmin');
 });
+
+it('verifiedKnownPassword() returns the default only when it matches the stored hash', function (): void {
+    createProtectedSuperAdmin(password: 'superadmin');
+
+    expect(passwordManager()->verifiedKnownPassword())->toBe('superadmin');
+});
+
+it('verifiedKnownPassword() returns null for a rotated account', function (): void {
+    createProtectedSuperAdmin(password: 'rotated-by-operator-99');
+
+    expect(passwordManager()->verifiedKnownPassword())->toBeNull();
+});
+
+it('verifiedKnownPassword() verifies the env override against the hash', function (): void {
+    config()->set('superadmin.password', 'demo-host-pw');
+    createProtectedSuperAdmin(password: 'demo-host-pw');
+
+    expect(passwordManager()->verifiedKnownPassword())->toBe('demo-host-pw');
+});
+
+it('verifiedKnownPassword() returns null when no account exists', function (): void {
+    expect(passwordManager()->verifiedKnownPassword())->toBeNull();
+});

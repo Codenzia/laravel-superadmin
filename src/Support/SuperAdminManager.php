@@ -108,6 +108,35 @@ final class SuperAdminManager
     }
 
     /**
+     * The known password candidate (env override, else the non-production
+     * default) ONLY when it verifiably matches the stored hash of the
+     * protected account — otherwise null. This is the single safe primitive
+     * for displaying the password: it either proves the value against the
+     * database or refuses, so callers can never print a stale credential.
+     */
+    public function verifiedKnownPassword(): ?string
+    {
+        $known = $this->knownDefaultPassword();
+
+        if ($known === null) {
+            return null;
+        }
+
+        $user = $this->user();
+        $hash = $user?->getAttribute('password');
+
+        if (! is_string($hash) || $hash === '') {
+            return null;
+        }
+
+        try {
+            return Hash::check($known, $hash) ? $known : null;
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    /**
      * Name used when none is passed via `ensure([...])`. Always returns
      * "Super Admin". Mirror of defaultPassword() / defaultEmail() so all
      * three identity defaults live in one place.

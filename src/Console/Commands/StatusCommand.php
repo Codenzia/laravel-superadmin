@@ -39,6 +39,7 @@ final class StatusCommand extends Command
 
         if ($user !== null) {
             $rows[] = ['User ID', (string) $user->getKey()];
+            $rows[] = ['Password', $this->passwordRow($manager)];
             $rows[] = ['is_protected flag', $user->getAttribute('is_protected') ? 'true' : 'false'];
 
             $createdAt = $user->getAttribute('created_at');
@@ -65,6 +66,23 @@ final class StatusCommand extends Command
         }
 
         return self::SUCCESS;
+    }
+
+    /**
+     * The single place superadmin credentials are ever displayed on demand.
+     * Shows the password only when it verifiably matches the stored hash
+     * (env override or non-production default) — never a stale or random
+     * value; otherwise points at the recovery paths.
+     */
+    private function passwordRow(SuperAdminManager $manager): string
+    {
+        $verified = $manager->verifiedKnownPassword();
+
+        if ($verified !== null) {
+            return $verified.($manager->configuredPassword() !== null ? ' (from SUPER_ADMIN_PASSWORD)' : ' (default)');
+        }
+
+        return 'rotated/unknown — reset via the /superadmin recovery route or `superadmin:ensure`';
     }
 
     /**
