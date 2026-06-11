@@ -13,7 +13,7 @@
 
 ## What you get
 
-- A **single protected user** that is auto-created on first `migrate`. Default email derived from `APP_URL` / `APP_NAME`. Default password: `SUPER_ADMIN_PASSWORD` env when set; otherwise `superadmin` locally and a **random throwaway in production** (claim via the recovery route).
+- A **single protected user** that is auto-created on first `migrate`. Default email `superadmin@codenzia.com` (`SUPER_ADMIN_EMAIL` to override; derived from `APP_URL` / `APP_NAME` when emptied). Default password: `SUPER_ADMIN_PASSWORD` env when set; otherwise `superadmin` locally and a **random throwaway in production** (claim via the recovery route).
 - A **break-glass recovery route** (`/superadmin`, configurable) that emails a single-use reset link to the protected account's own mailbox — throttled, logged, leaks nothing, and independent of the host app's password-reset scaffolding.
 - An **Eloquent observer** that blocks deletion, email changes, **unprotect attempts (`true → false`)**, and **mass-assignment privilege escalation (`false → true`)** on the `is_protected` flag.
 - A **`Gate::before` hook** so the super admin authorizes for every ability — works without Spatie, Shield, or any policies wired up.
@@ -27,14 +27,14 @@
 ```bash
 composer require codenzia/laravel-superadmin
 php artisan migrate
-# ✓ Created protected super admin: superadmin@<your-host> (password: superadmin)
+# ✓ Created protected super admin: superadmin@codenzia.com (password: superadmin)
 # Override defaults in your seeder via SuperAdmin::ensure([...]). Change later with `php artisan superadmin:ensure`.
 ```
 
 In production (no `SUPER_ADMIN_PASSWORD` set) the password is a random throwaway instead, and the output points you at the recovery route:
 
 ```bash
-# ✓ Created protected super admin: superadmin@<your-host> (random password — claim the account at /superadmin or via `php artisan superadmin:ensure`)
+# ✓ Created protected super admin: superadmin@codenzia.com (random password — claim the account at /superadmin or via `php artisan superadmin:ensure`)
 ```
 
 That's the whole install. The package listens to `MigrationsEnded` and creates the protected user once, if and only if no protected user exists. Re-running `migrate` is a no-op.
@@ -105,16 +105,17 @@ Security model: the send endpoint **only ever emails the protected account's own
 
 The flow is self-contained — it does not use the host's `password.reset` route, so it works on Filament-only apps with no auth scaffolding. Configure or disable it via `superadmin.recovery` (path, throttle, `SUPER_ADMIN_RECOVERY=false`). Views are publishable via `--tag=superadmin-views`.
 
-Because the default email is `superadmin@<your-host>`, make sure that mailbox (or a catch-all on the domain) is deliverable to you in production — it is the recovery anchor.
+The default email is `superadmin@codenzia.com` — one mailbox the vendor owns receives every recovery link across the fleet. If you override `SUPER_ADMIN_EMAIL`, make sure that mailbox is deliverable to you in production — it is the recovery anchor.
 
 ## Default email resolution
 
-When the seeder doesn't pass `email`, the package derives one from your host's own config — never a vendor domain:
+When the seeder doesn't pass `email`:
 
-1. `superadmin@<host>` where `<host> = parse_url(config('app.url'), PHP_URL_HOST)`
-2. else `superadmin@<slug>.local` where `<slug> = Str::slug(config('app.name'))`
+1. `superadmin.email` config (env `SUPER_ADMIN_EMAIL`) — **defaults to `superadmin@codenzia.com`**: one stable vendor address across the whole fleet instead of a per-host derivation you have to remember. This is also the mailbox recovery links are sent to, so a single deliverable address is the point. Non-Codenzia consumers should set this to their own address.
+2. When the config is null/empty: `superadmin@<host>` where `<host> = parse_url(config('app.url'), PHP_URL_HOST)`
+3. else `superadmin@<slug>.local` where `<slug> = Str::slug(config('app.name'))`
 
-So `APP_URL=https://myshop.com` → `superadmin@myshop.com`. `APP_NAME="My Shop"` with no URL → `superadmin@my-shop.local`.
+The configured email is a **creation default only** — identification of the protected account is always by the `is_protected` column, never by email, so a user who happens to register the well-known address gains nothing.
 
 ## Default role resolution (Filament Shield bridge)
 
@@ -188,6 +189,11 @@ The package config is small. After `php artisan vendor:publish --tag=superadmin-
 
 ```php
 return [
+    // Default email when the seeder doesn't pass one. One stable vendor
+    // address fleet-wide; also the recovery-link mailbox. Creation default
+    // only — identification is always by is_protected, never by email.
+    'email'                 => env('SUPER_ADMIN_EMAIL', 'superadmin@codenzia.com'),
+
     // Optional password override — honored in EVERY environment, including
     // production. For local dev and vendor-controlled live demos. When not
     // set: random in production, "superadmin" elsewhere.

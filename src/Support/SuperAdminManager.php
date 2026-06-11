@@ -19,10 +19,13 @@ final class SuperAdminManager
     public function __construct(private readonly Container $app) {}
 
     /**
-     * Returns the configured super-admin email. v0.4.0 removed the config /
-     * env key entirely, so this now always returns null. The method is kept
-     * because `is()` and `user()` call it — null lets them fall through to
-     * the `is_protected = true` lookup cleanly without an extra branch.
+     * The email used to IDENTIFY the protected user. Always null:
+     * `is_protected = true` is the only identity signal. Deliberately does
+     * NOT read `superadmin.email` — that key is a CREATION default only
+     * (see defaultEmail()). If identification keyed on the email, any user
+     * who registered the well-known vendor address would pass every gate.
+     * The method is kept because `is()` and `user()` call it — null lets
+     * them fall through to the `is_protected` lookup without an extra branch.
      */
     public function email(): ?string
     {
@@ -30,15 +33,22 @@ final class SuperAdminManager
     }
 
     /**
-     * Email used when none is passed via `ensure([...])`. Always derived
-     * from the host's own app config so the package never bakes in a vendor
-     * domain:
+     * Email used when none is passed via `ensure([...])`.
      *
-     *   1. superadmin@<host>          — where <host> = parse_url(APP_URL).host
-     *   2. superadmin@<slug>.local    — where <slug> = Str::slug(APP_NAME)
+     *   1. `superadmin.email` (env SUPER_ADMIN_EMAIL) — one stable vendor
+     *      address across the fleet; default superadmin@codenzia.com. This
+     *      is the recovery-link mailbox, so it must reach the vendor.
+     *   2. superadmin@<host>          — where <host> = parse_url(APP_URL).host
+     *   3. superadmin@<slug>.local    — where <slug> = Str::slug(APP_NAME)
      */
     public function defaultEmail(): string
     {
+        $configured = $this->config()->get('superadmin.email');
+
+        if (is_string($configured) && $configured !== '') {
+            return mb_strtolower($configured);
+        }
+
         $url = (string) $this->config()->get('app.url', '');
         $host = $url !== '' ? parse_url($url, PHP_URL_HOST) : null;
 

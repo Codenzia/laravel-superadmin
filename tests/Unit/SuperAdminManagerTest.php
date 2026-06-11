@@ -282,37 +282,34 @@ it('ensure([name, email, password]) applies all three on create', function (): v
 });
 
 // ---------------------------------------------------------------------------
-// defaultEmail() — derived only; no env / config read in v0.4.0
+// defaultEmail() — config-first (one stable vendor address), derived fallback
 // ---------------------------------------------------------------------------
 
-it('defaultEmail() ignores any stale superadmin.email config in v0.4.0', function (): void {
-    config()->set('superadmin.email', 'ignored@example.test');
+it('defaultEmail() returns the package default superadmin@codenzia.com', function (): void {
     config()->set('app.url', 'https://aqarkom.test');
 
-    expect(SuperAdmin::defaultEmail())->toBe('superadmin@aqarkom.test');
+    expect(SuperAdmin::defaultEmail())->toBe('superadmin@codenzia.com');
 });
 
-it('defaultEmail() derives from APP_URL host', function (): void {
+it('defaultEmail() honors a superadmin.email override, lowercased', function (): void {
+    config()->set('superadmin.email', 'Ops@MyVendor.test');
+
+    expect(SuperAdmin::defaultEmail())->toBe('ops@myvendor.test');
+});
+
+it('defaultEmail() derives from APP_URL host when the config is empty', function (): void {
+    config()->set('superadmin.email', null);
     config()->set('app.url', 'https://MyShop.example.com:8080/path');
 
     expect(SuperAdmin::defaultEmail())->toBe('superadmin@myshop.example.com');
 });
 
-it('defaultEmail() falls back to app.name slug when no APP_URL host is available', function (): void {
+it('defaultEmail() falls back to app.name slug when no config or APP_URL host is available', function (): void {
+    config()->set('superadmin.email', '');
     config()->set('app.url', '');
     config()->set('app.name', 'My Awesome Shop');
 
     expect(SuperAdmin::defaultEmail())->toBe('superadmin@my-awesome-shop.local');
-});
-
-it('defaultEmail() never bakes in a vendor domain', function (): void {
-    config()->set('app.url', null);
-    config()->set('app.name', null);
-
-    $email = SuperAdmin::defaultEmail();
-
-    expect($email)->toEndWith('.local')
-        ->and($email)->not->toContain('codenzia');
 });
 
 // ---------------------------------------------------------------------------
@@ -338,7 +335,7 @@ it('install() with no arguments uses defaultEmail() + defaultPassword()', functi
 
     $user = SuperAdmin::install();
 
-    expect($user->email)->toBe('superadmin@aqarkom.test');
+    expect($user->email)->toBe('superadmin@codenzia.com');
     expect(Hash::check('superadmin', $user->password))->toBeTrue();
 });
 

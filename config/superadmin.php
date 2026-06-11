@@ -13,8 +13,7 @@ return [
     | `SuperAdmin::ensure([...])` or derived by the package:
     |
     |   - name     → "Super Admin" (default) or seeder override
-    |   - email    → superadmin@<APP_URL host> → superadmin@<APP_NAME slug>.local
-    |                or seeder override
+    |   - email    → see `email` below, or seeder override
     |   - password → see `password` below
     |   - role     → filament-shield.super_admin.name (auto-discovered) →
     |                "super_admin" (fallback)
@@ -23,6 +22,24 @@ return [
     | (DB-only, never touches `.env`) or the recovery route below.
     |
     */
+
+    /*
+    |--------------------------------------------------------------------------
+    | Default Email
+    |--------------------------------------------------------------------------
+    |
+    | Email used whenever the package creates the super admin and no seeder
+    | override supplies one. One stable vendor address across the whole fleet
+    | beats a per-host derivation: it is the mailbox recovery links are sent
+    | to, so it must be deliverable to the vendor on every install.
+    |
+    | Non-Codenzia consumers: set SUPER_ADMIN_EMAIL (or this key) to your own
+    | address. When set to null/empty, the package falls back to deriving
+    | superadmin@<APP_URL host> → superadmin@<APP_NAME slug>.local.
+    |
+    */
+
+    'email' => env('SUPER_ADMIN_EMAIL', 'superadmin@codenzia.com'),
 
     /*
     |--------------------------------------------------------------------------
