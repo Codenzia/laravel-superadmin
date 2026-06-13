@@ -28,12 +28,9 @@ final class SuperAdminObserver
         }
 
         if ($user->isDirty('email')) {
-            $original = $user->getOriginal('email');
-            $configured = SuperAdmin::email();
             $wasProtected = (bool) $user->getOriginal('is_protected');
 
-            if ($wasProtected
-                || (is_string($original) && $configured !== null && mb_strtolower($original) === $configured)) {
+            if ($wasProtected) {
                 throw ProtectedAccountException::cannotChangeEmail();
             }
         }

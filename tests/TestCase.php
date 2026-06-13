@@ -59,5 +59,10 @@ abstract class TestCase extends Orchestra
         // and the migration-event handler would race with that. Individual
         // tests that exercise the hook re-enable it locally.
         $app['config']->set('superadmin.auto_install', false);
+
+        // Recovery is opt-in (disabled by default in the published config).
+        // The recovery-route tests need it on, and routes register at boot,
+        // so enable it for the whole suite here.
+        $app['config']->set('superadmin.recovery.enabled', true);
     }
 }

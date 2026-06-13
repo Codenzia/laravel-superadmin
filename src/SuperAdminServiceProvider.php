@@ -68,7 +68,7 @@ final class SuperAdminServiceProvider extends ServiceProvider
      */
     private function registerRecoveryRoutes(): void
     {
-        if (! (bool) config('superadmin.recovery.enabled', true)) {
+        if (! (bool) config('superadmin.recovery.enabled', false)) {
             return;
         }
 
@@ -274,7 +274,12 @@ final class SuperAdminServiceProvider extends ServiceProvider
         /** @var SuperAdminManager $manager */
         $manager = $this->app->make(SuperAdminManager::class);
 
-        Event::listen('eloquent.pivotAttaching: *', function (string $event, array $payload) use ($manager): void {
+        // Resolved super-admin role id, memoized in the closure scope so a
+        // bulk syncRoles across many users does not re-query per pivot attach.
+        // `false` = not yet resolved; null/int = resolved value.
+        $superAdminRoleId = false;
+
+        Event::listen('eloquent.pivotAttaching: *', function (string $event, array $payload) use ($manager, &$superAdminRoleId): void {
             if ($manager->isProtectionBypassed()) {
                 return;
             }
@@ -302,8 +307,11 @@ final class SuperAdminServiceProvider extends ServiceProvider
                 return;
             }
 
+            if ($superAdminRoleId === false) {
+                $superAdminRoleId = $roleClass::where('name', $configuredRole)->value('id');
+            }
+
             $attachingIds = (array) ($payload[2] ?? []);
-            $superAdminRoleId = $roleClass::where('name', $configuredRole)->value('id');
 
             if ($superAdminRoleId !== null && in_array($superAdminRoleId, $attachingIds, false)) {
                 throw \Codenzia\SuperAdmin\Exceptions\ProtectedAccountException::cannotAssignSuperAdminRole();

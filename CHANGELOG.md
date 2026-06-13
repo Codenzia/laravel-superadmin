@@ -5,6 +5,22 @@ All notable changes to `codenzia/laravel-superadmin` will be documented in this 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Security
+- **Removed the hardcoded `superadmin@codenzia.com` default email.** `superadmin.email` (env `SUPER_ADMIN_EMAIL`) now has no default; when unset the package derives the address from the host's own domain (`superadmin@<APP_URL host>` → `superadmin@<APP_NAME slug>.local`). This stops routing a third-party install's god-account recovery to a vendor-controlled mailbox. Codenzia's own fleet must now set `SUPER_ADMIN_EMAIL` explicitly per app.
+- **Recovery route is now disabled by default** (`superadmin.recovery.enabled` → `false`; opt in with `SUPER_ADMIN_RECOVERY=true`). It is an unauthenticated public endpoint and should be enabled deliberately, ideally with a non-default `SUPER_ADMIN_RECOVERY_PATH`.
+- **Memorable `superadmin` password is now restricted to `local`/`testing` environments.** Previously every non-`production` environment (staging, uat, demo, …) auto-created the omnipotent account with the well-known password `superadmin`; those environments now get a random throwaway, claimed via the recovery route or `superadmin:ensure`. `SUPER_ADMIN_PASSWORD` still overrides in any environment.
+
+### Fixed
+- **`SuperAdmin::is()` no longer silently fails on host models without an `is_protected` boolean cast.** It now coerces with `(bool)` instead of a strict `=== true || === 1`, so a column returned as the string `"1"` (common on MySQL PDO without a cast) still resolves as protected — restoring all four protection layers (gate, observer, role guard, Filament locks) on such hosts.
+- **Break-glass recovery reset now rotates `remember_token` and fires `Illuminate\Auth\Events\PasswordReset`**, evicting any persistent "remember me" cookie / triggering framework session invalidation — the point of a break-glass reset.
+- **`GET /superadmin/reset/{token}` now validates the token up front** and redirects with an error on a stale/expired link, instead of rendering the form and only failing on submit.
+
+### Changed
+- Removed dead code: the inert email-identity branches in `is()` / `user()` / the observer, and the never-produced `RoleAssignmentResult::Disabled` case (with `describe()` strings updated to current config reality).
+- Minor performance: `SuperAdminManager::user()` memoizes its `is_protected` column check, and the role-promotion guard caches the resolved super-admin role id across pivot attaches.
+
 ## [0.5.2] - 2026-06-11
 
 ### Added

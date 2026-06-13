@@ -13,8 +13,8 @@
 
 ## What you get
 
-- A **single protected user** that is auto-created on first `migrate`. Default email `superadmin@codenzia.com` (`SUPER_ADMIN_EMAIL` to override; derived from `APP_URL` / `APP_NAME` when emptied). Default password: `SUPER_ADMIN_PASSWORD` env when set; otherwise `superadmin` locally and a **random throwaway in production** (claim via the recovery route).
-- A **break-glass recovery route** (`/superadmin`, configurable) that emails a single-use reset link to the protected account's own mailbox — throttled, logged, leaks nothing, and independent of the host app's password-reset scaffolding.
+- A **single protected user** that is auto-created on first `migrate`. The email is **derived from the host's own domain** by default — `superadmin@<APP_URL host>` → `superadmin@<APP_NAME slug>.local` — with no hardcoded vendor address; set `SUPER_ADMIN_EMAIL` to pin a specific recovery mailbox. Default password: `SUPER_ADMIN_PASSWORD` env when set; otherwise `superadmin` in **local/testing only**, and a **random throwaway everywhere else** (production, staging, uat, demo, …) — claim via the recovery route.
+- A **break-glass recovery route** (`/superadmin`, configurable, **disabled by default** — opt in with `SUPER_ADMIN_RECOVERY=true`) that emails a single-use reset link to the protected account's own mailbox — throttled, logged, leaks nothing, and independent of the host app's password-reset scaffolding.
 - An **Eloquent observer** that blocks deletion, email changes, **unprotect attempts (`true → false`)**, and **mass-assignment privilege escalation (`false → true`)** on the `is_protected` flag.
 - A **`Gate::before` hook** so the super admin authorizes for every ability — works without Spatie, Shield, or any policies wired up.
 - **Late role assignment.** Solves the `MigrationsEnded` vs Spatie-Role-row race: when `spatie/laravel-permission` is in use, the `super_admin` role row often doesn't exist yet at auto-install time, so the role would silently fail to attach. A wildcard `eloquent.created` listener retroactively assigns the configured role the moment the row appears in a later seeder run. Idempotent and best-effort; no-ops cleanly when Spatie isn't installed.
@@ -27,14 +27,14 @@
 ```bash
 composer require codenzia/laravel-superadmin
 php artisan migrate
-# ✓ Created protected super admin: superadmin@codenzia.com (password: superadmin)
+# ✓ Created protected super admin: superadmin@your-app.test (password: superadmin)
 # Override defaults in your seeder via SuperAdmin::ensure([...]). Change later with `php artisan superadmin:ensure`.
 ```
 
-In production (no `SUPER_ADMIN_PASSWORD` set) the password is a random throwaway instead, and the output points you at the recovery route:
+Outside local/testing (production, staging, uat, demo, … — no `SUPER_ADMIN_PASSWORD` set) the password is a random throwaway instead, and the output points you at the recovery route (enable it first with `SUPER_ADMIN_RECOVERY=true`):
 
 ```bash
-# ✓ Created protected super admin: superadmin@codenzia.com (random password — claim the account at /superadmin or via `php artisan superadmin:ensure`)
+# ✓ Created protected super admin: superadmin@your-app.test (random password — claim the account at /superadmin or via `php artisan superadmin:ensure`)
 ```
 
 That's the whole install. The package listens to `MigrationsEnded` and creates the protected user once, if and only if no protected user exists. Re-running `migrate` is a no-op.
@@ -103,15 +103,15 @@ POST /superadmin/reset         applies it
 
 Security model: the send endpoint **only ever emails the protected account's own address** and responds identically whether or not the account exists — a guessable URL leaks nothing and can at worst add noise to your own mailbox. All endpoints share a per-IP and a global rate limit (3/hour per IP, 10/hour app-wide by default), and every request is logged (`Super admin recovery link requested.`) so you can monitor probing. The reset email names the app and host, so an unsolicited link doubles as an alert.
 
-The flow is self-contained — it does not use the host's `password.reset` route, so it works on Filament-only apps with no auth scaffolding. Configure or disable it via `superadmin.recovery` (path, throttle, `SUPER_ADMIN_RECOVERY=false`). Views are publishable via `--tag=superadmin-views`.
+The flow is self-contained — it does not use the host's `password.reset` route, so it works on Filament-only apps with no auth scaffolding. It is **disabled by default** (it is an unauthenticated public endpoint); enable it deliberately with `SUPER_ADMIN_RECOVERY=true`. Configure it via `superadmin.recovery` (path, throttle) and prefer a non-default `SUPER_ADMIN_RECOVERY_PATH`. Views are publishable via `--tag=superadmin-views`.
 
-The default email is `superadmin@codenzia.com` — one mailbox the vendor owns receives every recovery link across the fleet. If you override `SUPER_ADMIN_EMAIL`, make sure that mailbox is deliverable to you in production — it is the recovery anchor.
+The recovery anchor is the protected account's own email. By default that is **derived from your own domain** (`superadmin@<APP_URL host>`); set `SUPER_ADMIN_EMAIL` to pin a specific mailbox, and make sure it is deliverable to you in production.
 
 ## Default email resolution
 
 When the seeder doesn't pass `email`:
 
-1. `superadmin.email` config (env `SUPER_ADMIN_EMAIL`) — **defaults to `superadmin@codenzia.com`**: one stable vendor address across the whole fleet instead of a per-host derivation you have to remember. This is also the mailbox recovery links are sent to, so a single deliverable address is the point. Non-Codenzia consumers should set this to their own address.
+1. `superadmin.email` config (env `SUPER_ADMIN_EMAIL`) — **no hardcoded default**. Set this to pin a specific recovery mailbox you control. When unset, the package derives a host-local address (below) so the recovery anchor always lives on your own domain.
 2. When the config is null/empty: `superadmin@<host>` where `<host> = parse_url(config('app.url'), PHP_URL_HOST)`
 3. else `superadmin@<slug>.local` where `<slug> = Str::slug(config('app.name'))`
 
@@ -189,19 +189,20 @@ The package config is small. After `php artisan vendor:publish --tag=superadmin-
 
 ```php
 return [
-    // Default email when the seeder doesn't pass one. One stable vendor
-    // address fleet-wide; also the recovery-link mailbox. Creation default
-    // only — identification is always by is_protected, never by email.
-    'email'                 => env('SUPER_ADMIN_EMAIL', 'superadmin@codenzia.com'),
+    // Default email when the seeder doesn't pass one. No hardcoded default;
+    // when unset it derives from the host domain (superadmin@<APP_URL host>).
+    // Creation default only — identification is always by is_protected.
+    'email'                 => env('SUPER_ADMIN_EMAIL'),
 
     // Optional password override — honored in EVERY environment, including
     // production. For local dev and vendor-controlled live demos. When not
-    // set: random in production, "superadmin" elsewhere.
+    // set: "superadmin" in local/testing only, random everywhere else.
     'password'              => env('SUPER_ADMIN_PASSWORD'),
 
-    // Break-glass recovery flow — see "Password defaults & the recovery route".
+    // Break-glass recovery flow — disabled by default (opt in). See
+    // "Password defaults & the recovery route".
     'recovery' => [
-        'enabled'  => env('SUPER_ADMIN_RECOVERY', true),
+        'enabled'  => env('SUPER_ADMIN_RECOVERY', false),
         'path'     => env('SUPER_ADMIN_RECOVERY_PATH', 'superadmin'),
         'throttle' => ['max_attempts' => 3, 'global_max_attempts' => 10, 'decay_seconds' => 3600],
     ],
@@ -237,7 +238,7 @@ return [
 
 ## Seeder integration — the Codenzia standard
 
-**Seeders never carry superadmin credentials.** The package owns identity end-to-end: auto-install on `migrate`, `superadmin@codenzia.com`, `SUPER_ADMIN_PASSWORD` env (or `superadmin` outside production / random in production), `/superadmin` recovery. The contract per app:
+**Seeders never carry superadmin credentials.** The package owns identity end-to-end: auto-install on `migrate`, a host-derived `superadmin@<your-domain>` (or `SUPER_ADMIN_EMAIL`), `SUPER_ADMIN_PASSWORD` env (or `superadmin` in local/testing / random everywhere else), opt-in `/superadmin` recovery. The contract per app:
 
 - **Standard seeder** (`DatabaseSeeder` / `SystemSeeder`): roles and permissions only. Does not create, update, or print the super admin.
 - **DemoSeeder**: may call the **argless** `SuperAdmin::ensure()` when it needs the row, followed by app-specific attribute fixups — which carry no credentials:
@@ -259,8 +260,9 @@ class DemoSeeder extends Seeder
 - **Credential output**: apps print NOTHING about the super admin — not in seeders, not in demo tables. The package owns all credential display: the creation line on `migrate`, and `php artisan superadmin:status` on demand (hash-verified, can't go stale). Demo seeders may still print their own demo accounts (agents, customers, …).
 - **`.env.example`**: document the two knobs:
   ```
-  # SUPER_ADMIN_EMAIL=superadmin@codenzia.com
-  # SUPER_ADMIN_PASSWORD=   # set on live-demo hosts; unset in production (random + /superadmin recovery)
+  # SUPER_ADMIN_EMAIL=     # pin a recovery mailbox you control; derived from APP_URL when unset
+  # SUPER_ADMIN_PASSWORD=  # set on live-demo hosts; unset in production (random + /superadmin recovery)
+  # SUPER_ADMIN_RECOVERY=  # set true to enable the break-glass /superadmin recovery route (off by default)
   ```
 
 The array form `SuperAdmin::ensure(['name' => ..., 'email' => ..., 'password' => ...])` still exists as an escape hatch (it force-applies the supplied fields), but committing credentials to a seeder defeats the model — don't use it in Codenzia repos. For raw create/update use `SuperAdmin::install($password, $email, $name)`.

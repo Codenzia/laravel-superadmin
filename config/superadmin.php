@@ -29,17 +29,18 @@ return [
     |--------------------------------------------------------------------------
     |
     | Email used whenever the package creates the super admin and no seeder
-    | override supplies one. One stable vendor address across the whole fleet
-    | beats a per-host derivation: it is the mailbox recovery links are sent
-    | to, so it must be deliverable to the vendor on every install.
+    | override supplies one. There is intentionally NO hardcoded default:
+    | shipping a vendor-controlled mailbox as the recovery anchor would let
+    | whoever controls that mailbox claim super-admin on any install.
     |
-    | Non-Codenzia consumers: set SUPER_ADMIN_EMAIL (or this key) to your own
-    | address. When set to null/empty, the package falls back to deriving
-    | superadmin@<APP_URL host> → superadmin@<APP_NAME slug>.local.
+    | When set to null/empty (the default), the package derives the address
+    | from the host's own domain: superadmin@<APP_URL host> →
+    | superadmin@<APP_NAME slug>.local. Set SUPER_ADMIN_EMAIL (or this key)
+    | explicitly to pin a specific recovery mailbox you control.
     |
     */
 
-    'email' => env('SUPER_ADMIN_EMAIL', 'superadmin@codenzia.com'),
+    'email' => env('SUPER_ADMIN_EMAIL'),
 
     /*
     |--------------------------------------------------------------------------
@@ -83,10 +84,14 @@ return [
     | depend on the host app's own password-reset scaffolding (works on
     | Filament-only apps with no `password.reset` route).
     |
+    | Disabled by default: it is an unauthenticated public endpoint, so opt
+    | in deliberately by setting SUPER_ADMIN_RECOVERY=true (and ideally a
+    | non-default SUPER_ADMIN_RECOVERY_PATH).
+    |
     */
 
     'recovery' => [
-        'enabled' => (bool) env('SUPER_ADMIN_RECOVERY', true),
+        'enabled' => (bool) env('SUPER_ADMIN_RECOVERY', false),
 
         'path' => env('SUPER_ADMIN_RECOVERY_PATH', 'superadmin'),
 

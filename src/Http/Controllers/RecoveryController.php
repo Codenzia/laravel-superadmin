@@ -6,6 +6,7 @@ namespace Codenzia\SuperAdmin\Http\Controllers;
 
 use Codenzia\SuperAdmin\Notifications\RecoveryLinkNotification;
 use Codenzia\SuperAdmin\Support\SuperAdminManager;
+use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Contracts\Auth\CanResetPassword;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
@@ -14,6 +15,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Str;
 
 /**
  * Break-glass recovery flow for the protected super admin.
@@ -64,8 +66,20 @@ final class RecoveryController
             ->with('superadmin-status', __('If the super admin account exists, a reset link has been emailed to its mailbox.'));
     }
 
-    public function form(Request $request, string $token): View
+    public function form(Request $request, SuperAdminManager $manager, string $token): View|RedirectResponse
     {
+        // Validate the token up front so a stale/expired link fails fast,
+        // instead of letting the user fill in a password and only learn on
+        // POST that the link was invalid. (The POST path re-checks anyway.)
+        $user = $manager->user();
+
+        if (! $user instanceof CanResetPassword
+            || ! Password::broker()->tokenExists($user, $token)) {
+            return redirect()
+                ->route('superadmin.recovery.show')
+                ->withErrors(['token' => __('This reset link is invalid or has expired. Request a new one.')]);
+        }
+
         return view('superadmin::reset', ['token' => $token]);
     }
 
@@ -93,10 +107,19 @@ final class RecoveryController
                 ->withErrors(['token' => __('This reset link is invalid or has expired. Request a new one.')]);
         }
 
-        $user->setAttribute('password', Hash::make($validated['password']));
-        $user->save();
+        // forceFill: password / remember_token may be guarded on host models.
+        // Rotating remember_token immediately invalidates any persistent
+        // "remember me" cookies — break-glass should evict any live attacker.
+        $user->forceFill([
+            'password' => Hash::make($validated['password']),
+            'remember_token' => Str::random(60),
+        ])->save();
 
         Password::broker()->getRepository()->delete($user);
+
+        // Lets the framework's session/auth listeners perform downstream
+        // invalidation just as a normal password reset would.
+        event(new PasswordReset($user));
 
         Log::info('Super admin password set via recovery route.', [
             'ip' => $request->ip(),

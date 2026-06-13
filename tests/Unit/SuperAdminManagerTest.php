@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Codenzia\SuperAdmin\Facades\SuperAdmin;
 use Codenzia\SuperAdmin\Support\SuperAdminManager;
+use Codenzia\SuperAdmin\Tests\Fixtures\UncastUser;
 use Codenzia\SuperAdmin\Tests\Fixtures\User;
 use Codenzia\SuperAdmin\Tests\Fixtures\UserWithRoles;
 use Illuminate\Support\Facades\Hash;
@@ -38,6 +39,21 @@ it('does not match users without the is_protected flag', function (): void {
 
 it('handles null user without erroring', function (): void {
     expect(SuperAdmin::is(null))->toBeFalse();
+});
+
+it('matches the super admin even when the host model does not cast is_protected', function (): void {
+    // Simulate a MySQL host where the un-cast boolean comes back as "1".
+    $user = new UncastUser;
+    $user->setRawAttributes(['is_protected' => '1']);
+
+    expect(SuperAdmin::is($user))->toBeTrue();
+});
+
+it('does not match an un-cast model whose is_protected is "0"', function (): void {
+    $user = new UncastUser;
+    $user->setRawAttributes(['is_protected' => '0']);
+
+    expect(SuperAdmin::is($user))->toBeFalse();
 });
 
 // ---------------------------------------------------------------------------
@@ -198,7 +214,7 @@ it('ensure() creates the superadmin from defaults when none exists', function ()
 
     $user = SuperAdmin::ensure();
 
-    expect($user->email)->toBe('superadmin@codenzia.com');
+    expect($user->email)->toBe('superadmin@myshop.test');
     expect((bool) $user->is_protected)->toBeTrue();
     expect(Hash::check('superadmin', $user->password))->toBeTrue();
 });
@@ -234,7 +250,7 @@ it('ensure([password]) creates a new user with the supplied password', function 
 
     expect((bool) $user->is_protected)->toBeTrue();
     expect(Hash::check('seeder-supplied-pw', $user->password))->toBeTrue();
-    expect($user->email)->toBe('superadmin@codenzia.com');
+    expect($user->email)->toBe('superadmin@acme.test');
     expect($user->name)->toBe('Super Admin');
 });
 
@@ -285,10 +301,20 @@ it('ensure([name, email, password]) applies all three on create', function (): v
 // defaultEmail() — config-first (one stable vendor address), derived fallback
 // ---------------------------------------------------------------------------
 
-it('defaultEmail() returns the package default superadmin@codenzia.com', function (): void {
+it('defaultEmail() derives from the host APP_URL when no email is configured', function (): void {
+    config()->set('superadmin.email', null);
     config()->set('app.url', 'https://aqarkom.test');
 
-    expect(SuperAdmin::defaultEmail())->toBe('superadmin@codenzia.com');
+    expect(SuperAdmin::defaultEmail())->toBe('superadmin@aqarkom.test');
+});
+
+it('defaultEmail() never returns a codenzia.com address when SUPER_ADMIN_EMAIL is unset', function (): void {
+    config()->set('superadmin.email', null);
+    config()->set('app.url', 'https://some-customer-app.test');
+
+    expect(SuperAdmin::defaultEmail())
+        ->not->toContain('codenzia.com')
+        ->toBe('superadmin@some-customer-app.test');
 });
 
 it('defaultEmail() honors a superadmin.email override, lowercased', function (): void {
@@ -335,7 +361,7 @@ it('install() with no arguments uses defaultEmail() + defaultPassword()', functi
 
     $user = SuperAdmin::install();
 
-    expect($user->email)->toBe('superadmin@codenzia.com');
+    expect($user->email)->toBe('superadmin@aqarkom.test');
     expect(Hash::check('superadmin', $user->password))->toBeTrue();
 });
 

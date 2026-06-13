@@ -14,16 +14,16 @@ it('install() sets is_protected on a model that guards it against mass assignmen
     $user = SuperAdmin::install('a-strong-password-123');
 
     expect((bool) $user->is_protected)->toBeTrue()
-        ->and($user->email)->toBe('superadmin@codenzia.com')
+        ->and($user->email)->toBe('superadmin@aqarkom.test')
         ->and(Hash::check('a-strong-password-123', $user->password))->toBeTrue();
 });
 
 it('ensure() claims an existing non-protected row holding the default email', function (): void {
     // A host where the flag was dropped (or someone created the address):
-    // a plain user already owns superadmin@codenzia.com.
+    // a plain user already owns superadmin@aqarkom.test.
     $orphan = User::query()->create([
         'name' => 'Orphan',
-        'email' => 'superadmin@codenzia.com',
+        'email' => 'superadmin@aqarkom.test',
         'password' => Hash::make('old-password-1234'),
         'is_protected' => false,
     ]);
@@ -32,13 +32,13 @@ it('ensure() claims an existing non-protected row holding the default email', fu
 
     expect($user->getKey())->toBe($orphan->getKey())
         ->and((bool) $user->fresh()->is_protected)->toBeTrue()
-        ->and(User::query()->where('email', 'superadmin@codenzia.com')->count())->toBe(1);
+        ->and(User::query()->where('email', 'superadmin@aqarkom.test')->count())->toBe(1);
 });
 
 it('ensure([...]) with a password claims and re-credentials the existing email row', function (): void {
     $orphan = User::query()->create([
         'name' => 'Orphan',
-        'email' => 'superadmin@codenzia.com',
+        'email' => 'superadmin@aqarkom.test',
         'password' => Hash::make('old-password-1234'),
         'is_protected' => false,
     ]);

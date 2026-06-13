@@ -16,16 +16,18 @@ final class SuperAdminManager
 {
     private bool $protectionBypassed = false;
 
+    private ?bool $hasProtectedColumn = null;
+
     public function __construct(private readonly Container $app) {}
 
     /**
-     * The email used to IDENTIFY the protected user. Always null:
-     * `is_protected = true` is the only identity signal. Deliberately does
-     * NOT read `superadmin.email` — that key is a CREATION default only
-     * (see defaultEmail()). If identification keyed on the email, any user
-     * who registered the well-known vendor address would pass every gate.
-     * The method is kept because `is()` and `user()` call it — null lets
-     * them fall through to the `is_protected` lookup without an extra branch.
+     * Inert facade stub kept for backward compatibility. Always returns null.
+     *
+     * Identity is `is_protected = true`-only (see is()); there is no
+     * email-based identity path. Deliberately does NOT read `superadmin.email`
+     * — that key is a CREATION default only (see defaultEmail()). Keying
+     * identity on an email would let any user who registered the configured
+     * address pass every gate.
      */
     public function email(): ?string
     {
@@ -35,9 +37,8 @@ final class SuperAdminManager
     /**
      * Email used when none is passed via `ensure([...])`.
      *
-     *   1. `superadmin.email` (env SUPER_ADMIN_EMAIL) — one stable vendor
-     *      address across the fleet; default superadmin@codenzia.com. This
-     *      is the recovery-link mailbox, so it must reach the vendor.
+     *   1. `superadmin.email` (env SUPER_ADMIN_EMAIL) when explicitly set —
+     *      a recovery mailbox the operator controls. No vendor default.
      *   2. superadmin@<host>          — where <host> = parse_url(APP_URL).host
      *   3. superadmin@<slug>.local    — where <slug> = Str::slug(APP_NAME)
      */
@@ -90,17 +91,20 @@ final class SuperAdminManager
             return $configured;
         }
 
-        return $this->app->environment('production') ? null : 'superadmin';
+        // Memorable password only for genuinely local/dev envs; every other
+        // environment (production, staging, uat, demo, ...) gets a random
+        // throwaway claimed via the recovery route / superadmin:ensure.
+        return $this->app->environment('local', 'testing') ? 'superadmin' : null;
     }
 
     /**
      * Password used when none is passed via `ensure([...])`.
      *
      *   1. `superadmin.password` (env SUPER_ADMIN_PASSWORD) when set.
-     *   2. In production: a cryptographically random throwaway — nobody
-     *      knows it; the account is claimed via the recovery route or
-     *      `php artisan superadmin:ensure`.
-     *   3. Elsewhere: the literal "superadmin" — memorable for local dev.
+     *   2. In local/testing: the literal "superadmin" — memorable for dev.
+     *   3. Everywhere else (production, staging, uat, demo, ...): a
+     *      cryptographically random throwaway — nobody knows it; the account
+     *      is claimed via the recovery route or `php artisan superadmin:ensure`.
      */
     public function defaultPassword(): string
     {
@@ -178,12 +182,15 @@ final class SuperAdminManager
     }
 
     /**
-     * A user is the protected super admin if either:
-     *  - the user's email matches the configured email, OR
-     *  - the user has is_protected = true in the database
+     * A user is the protected super admin when it has is_protected = true in
+     * the database. Identity is is_protected-only (the email-identity path is
+     * intentionally inert — see email()).
      *
-     * Both signals are checked so tampering with one alone does not disable
-     * the protection.
+     * The attribute is coerced with (bool) rather than a strict === check so
+     * that a host User model WITHOUT an `is_protected` boolean cast (where
+     * MySQL's PDO driver commonly returns the string "1") still resolves as
+     * protected. (bool) "0" and (bool) null are false, so non-protected rows
+     * are still correctly excluded — fail-safe in both directions.
      */
     public function is(?Model $user): bool
     {
@@ -191,19 +198,7 @@ final class SuperAdminManager
             return false;
         }
 
-        if ($user->getAttribute('is_protected') === true || $user->getAttribute('is_protected') === 1) {
-            return true;
-        }
-
-        $email = $this->email();
-
-        if ($email === null) {
-            return false;
-        }
-
-        $userEmail = $user->getAttribute('email');
-
-        return is_string($userEmail) && mb_strtolower($userEmail) === $email;
+        return (bool) $user->getAttribute('is_protected') === true;
     }
 
     /**
@@ -233,25 +228,21 @@ final class SuperAdminManager
         /** @var Model $instance */
         $instance = new $model;
 
-        $query = $model::query();
-
-        if (Schema::hasColumn($instance->getTable(), 'is_protected')) {
-            $protected = $query->where('is_protected', true)->first();
-
-            if ($protected !== null) {
-                return $protected;
-            }
-        }
-
-        $email = $this->email();
-
-        if ($email === null) {
+        if (! $this->hasProtectedColumn($instance->getTable())) {
             return null;
         }
 
-        return $model::query()
-            ->whereRaw('LOWER('.$instance->getConnection()->getQueryGrammar()->wrap('email').') = ?', [$email])
-            ->first();
+        return $model::query()->where('is_protected', true)->first();
+    }
+
+    /**
+     * Memoized `is_protected` column check. The manager is a request-scoped
+     * singleton, so this caches the metadata round-trip for the request
+     * lifetime (the auto-install path runs its own independent check).
+     */
+    private function hasProtectedColumn(string $table): bool
+    {
+        return $this->hasProtectedColumn ??= Schema::hasColumn($table, 'is_protected');
     }
 
     public function exists(): bool

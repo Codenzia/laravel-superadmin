@@ -31,12 +31,30 @@ it('honors the configured password override even in production', function (): vo
     }
 });
 
-it('defaults to the literal superadmin outside production', function (): void {
+it('defaults to the literal superadmin in local/testing', function (): void {
     config()->set('superadmin.password', null);
 
+    // The suite runs under APP_ENV=testing, one of the trusted dev envs.
     expect(passwordManager()->configuredPassword())->toBeNull()
         ->and(passwordManager()->knownDefaultPassword())->toBe('superadmin')
         ->and(passwordManager()->defaultPassword())->toBe('superadmin');
+});
+
+it('generates a random password in staging (not just production)', function (): void {
+    config()->set('superadmin.password', null);
+    app()->detectEnvironment(fn (): string => 'staging');
+
+    try {
+        $first = passwordManager()->defaultPassword();
+        $second = passwordManager()->defaultPassword();
+
+        expect(passwordManager()->knownDefaultPassword())->toBeNull()
+            ->and($first)->not->toBe('superadmin')
+            ->and(mb_strlen($first))->toBeGreaterThanOrEqual(40)
+            ->and($first)->not->toBe($second);
+    } finally {
+        app()->detectEnvironment(fn (): string => 'testing');
+    }
 });
 
 it('generates a random password in production with no override', function (): void {
