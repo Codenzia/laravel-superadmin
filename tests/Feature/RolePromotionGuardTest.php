@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Codenzia\SuperAdmin\Exceptions\ProtectedAccountException;
 use Codenzia\SuperAdmin\Facades\SuperAdmin;
+use Codenzia\SuperAdmin\SuperAdminServiceProvider;
 use Codenzia\SuperAdmin\Tests\Fixtures\FakeRole;
 use Codenzia\SuperAdmin\Tests\Fixtures\UserWithRoles;
 use Illuminate\Support\Facades\Event;
@@ -102,7 +103,7 @@ it('is disabled when prevent_role_promotion is false', function (): void {
     // config so the guard is skipped this time.
     Event::forget('eloquent.pivotAttaching: *');
     config()->set('superadmin.protection.prevent_role_promotion', false);
-    app()->register(Codenzia\SuperAdmin\SuperAdminServiceProvider::class, force: true);
+    app()->register(SuperAdminServiceProvider::class, force: true);
 
     $user = makeNonProtectedUser();
     $roleId = FakeRole::query()->where('name', 'super_admin')->value('id');

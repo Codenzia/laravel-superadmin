@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Codenzia\SuperAdmin\Exceptions\ProtectedAccountException;
 use Codenzia\SuperAdmin\Facades\SuperAdmin;
+use Codenzia\SuperAdmin\Tests\Fixtures\User;
 
 it('blocks deletion of the protected super admin', function (): void {
     $user = createProtectedSuperAdmin();
@@ -106,7 +107,7 @@ it('withoutProtection allows promoting a regular user to protected', function ()
 });
 
 it('blocks creating a user with is_protected = true outside withoutProtection', function (): void {
-    expect(fn () => Codenzia\SuperAdmin\Tests\Fixtures\User::query()->create([
+    expect(fn () => User::query()->create([
         'name' => 'Attacker',
         'email' => 'attacker-create@aqarkom.test',
         'password' => bcrypt('password-1234'),

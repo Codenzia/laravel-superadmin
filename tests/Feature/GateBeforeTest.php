@@ -2,9 +2,7 @@
 
 declare(strict_types=1);
 
-use Codenzia\SuperAdmin\Tests\Fixtures\User;
 use Illuminate\Support\Facades\Gate;
-use Illuminate\Support\Facades\Hash;
 
 beforeEach(function (): void {
     // Baseline ability that returns false for everyone — so anything that
@@ -43,4 +41,3 @@ it('handles null user gracefully (Gate::denies without acting user)', function (
 
     expect(Gate::denies('do-anything'))->toBeTrue();
 });
-

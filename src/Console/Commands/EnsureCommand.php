@@ -93,8 +93,8 @@ final class EnsureCommand extends Command
         // ---- Apply ----
         try {
             $user = $manager->ensure([
-                'name'     => $name,
-                'email'    => $email,
+                'name' => $name,
+                'email' => $email,
                 'password' => $passwordForEnsure,
             ]);
         } catch (\Throwable $e) {

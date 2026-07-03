@@ -6,6 +6,7 @@ namespace Codenzia\SuperAdmin;
 
 use Codenzia\SuperAdmin\Console\Commands\EnsureCommand;
 use Codenzia\SuperAdmin\Console\Commands\StatusCommand;
+use Codenzia\SuperAdmin\Exceptions\ProtectedAccountException;
 use Codenzia\SuperAdmin\Http\Controllers\RecoveryController;
 use Codenzia\SuperAdmin\Observers\SuperAdminObserver;
 use Codenzia\SuperAdmin\Support\SuperAdminManager;
@@ -316,7 +317,7 @@ final class SuperAdminServiceProvider extends ServiceProvider
             $attachingIds = (array) ($payload[2] ?? []);
 
             if ($superAdminRoleId !== null && in_array($superAdminRoleId, $attachingIds, false)) {
-                throw \Codenzia\SuperAdmin\Exceptions\ProtectedAccountException::cannotAssignSuperAdminRole();
+                throw ProtectedAccountException::cannotAssignSuperAdminRole();
             }
         });
     }
