@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Codenzia\SuperAdmin\Http\Controllers;
 
+use Codenzia\SuperAdmin\Http\Requests\UpdateRecoveryPasswordRequest;
 use Codenzia\SuperAdmin\Notifications\RecoveryLinkNotification;
 use Codenzia\SuperAdmin\Support\SuperAdminManager;
 use Illuminate\Auth\Events\PasswordReset;
@@ -88,16 +89,13 @@ final class RecoveryController
         return view('superadmin::reset', ['token' => $token]);
     }
 
-    public function update(Request $request, SuperAdminManager $manager): RedirectResponse
+    public function update(UpdateRecoveryPasswordRequest $request, SuperAdminManager $manager): RedirectResponse
     {
         if ($response = $this->throttle($request)) {
             return $response;
         }
 
-        $validated = $request->validate([
-            'token' => ['required', 'string'],
-            'password' => ['required', 'string', 'min:12', 'confirmed'],
-        ]);
+        $validated = $request->validated();
 
         $user = $manager->user();
 

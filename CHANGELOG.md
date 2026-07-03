@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`GET /superadmin/reset/{token}` now validates the token up front** and redirects with an error on a stale/expired link, instead of rendering the form and only failing on submit.
 
 ### Changed
+- **Recovery password update now validates via `UpdateRecoveryPasswordRequest`** instead of an inline `$request->validate()`, using `Illuminate\Validation\Rules\Password::min(12)->max(255)` for stronger strength rules on the highest-privilege endpoint in the fleet.
 - Removed dead code: the inert email-identity branches in `is()` / `user()` / the observer, and the never-produced `RoleAssignmentResult::Disabled` case (with `describe()` strings updated to current config reality).
 - Minor performance: `SuperAdminManager::user()` memoizes its `is_protected` column check, and the role-promotion guard caches the resolved super-admin role id across pivot attaches.
 
