@@ -2,7 +2,7 @@
 
 [![Latest Version](https://img.shields.io/packagist/v/codenzia/laravel-superadmin.svg?style=flat-square)](https://packagist.org/packages/codenzia/laravel-superadmin)
 [![PHP Version](https://img.shields.io/packagist/php-v/codenzia/laravel-superadmin.svg?style=flat-square)](https://packagist.org/packages/codenzia/laravel-superadmin)
-[![Laravel](https://img.shields.io/badge/Laravel-11%20%7C%2012%20%7C%2013-ef4444?style=flat-square)](https://laravel.com)
+[![Laravel](https://img.shields.io/badge/Laravel-12%20%7C%2013-ef4444?style=flat-square)](https://laravel.com)
 [![Filament](https://img.shields.io/badge/Filament-v4%20%7C%20v5-f59e0b?style=flat-square)](https://filamentphp.com)
 [![Tests](https://github.com/Codenzia/laravel-superadmin/actions/workflows/tests.yml/badge.svg?style=flat-square)](https://github.com/Codenzia/laravel-superadmin/actions/workflows/tests.yml)
 [![License](https://img.shields.io/packagist/l/codenzia/laravel-superadmin.svg?style=flat-square)](LICENSE.md)
