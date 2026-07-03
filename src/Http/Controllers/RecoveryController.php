@@ -9,6 +9,7 @@ use Codenzia\SuperAdmin\Support\SuperAdminManager;
 use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Contracts\Auth\CanResetPassword;
 use Illuminate\Contracts\View\View;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -121,9 +122,16 @@ final class RecoveryController
 
         Password::broker()->getRepository()->delete($user);
 
-        // Lets the framework's session/auth listeners perform downstream
-        // invalidation just as a normal password reset would.
+        // Fires the standard Laravel password-reset event. Stock Laravel
+        // ships no listener on it, so this alone does not evict live
+        // sessions — hosts running `AuthenticateSession` middleware get
+        // that behavior from the session driver check below plus their own
+        // middleware; hosts on non-database session drivers should add
+        // `AuthenticateSession` if evicting a live attacker's session on
+        // reset matters to them.
         event(new PasswordReset($user));
+
+        $this->evictDatabaseSessions($user);
 
         Log::info('Super admin password set via recovery route.', [
             'ip' => $request->ip(),
@@ -132,6 +140,26 @@ final class RecoveryController
         return redirect()
             ->route('superadmin.recovery.show')
             ->with('superadmin-status', __('Password updated. You can now sign in with the new password.'));
+    }
+
+    /**
+     * Best-effort eviction of the protected user's live sessions when the
+     * host uses the database session driver. Never breaks the reset itself.
+     */
+    private function evictDatabaseSessions(Model $user): void
+    {
+        if (config('session.driver') !== 'database') {
+            return;
+        }
+
+        try {
+            $user->getConnection()
+                ->table(config('session.table', 'sessions'))
+                ->where('user_id', $user->getKey())
+                ->delete();
+        } catch (\Throwable $e) {
+            Log::warning('Super admin recovery: failed to evict database sessions: '.$e->getMessage());
+        }
     }
 
     private function throttle(Request $request): ?RedirectResponse

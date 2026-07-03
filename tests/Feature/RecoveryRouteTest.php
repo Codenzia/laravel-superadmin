@@ -3,10 +3,12 @@
 declare(strict_types=1);
 
 use Codenzia\SuperAdmin\Notifications\RecoveryLinkNotification;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\Schema;
 
 beforeEach(function (): void {
     RateLimiter::clear('superadmin-recovery:127.0.0.1');
@@ -98,6 +100,52 @@ it('rejects an invalid token', function (): void {
     ])->assertSessionHasErrors('token');
 
     expect(Hash::check('original-password-123', $admin->fresh()->getAttribute('password')))->toBeTrue();
+});
+
+it('evicts database sessions for the protected user on reset', function (): void {
+    config()->set('session.driver', 'database');
+    config()->set('session.table', 'sessions');
+
+    Schema::dropIfExists('sessions');
+    Schema::create('sessions', function ($table): void {
+        $table->string('id')->primary();
+        $table->foreignId('user_id')->nullable();
+        $table->string('ip_address', 45)->nullable();
+        $table->text('user_agent')->nullable();
+        $table->text('payload');
+        $table->integer('last_activity');
+    });
+
+    $admin = createProtectedSuperAdmin();
+    $token = Password::broker()->getRepository()->create($admin);
+
+    DB::table('sessions')->insert([
+        'id' => 'attacker-session',
+        'user_id' => $admin->getKey(),
+        'payload' => 'irrelevant',
+        'last_activity' => time(),
+    ]);
+
+    $this->post('/superadmin/reset', [
+        'token' => $token,
+        'password' => 'brand-new-password-123',
+        'password_confirmation' => 'brand-new-password-123',
+    ])->assertRedirect('/superadmin');
+
+    expect(DB::table('sessions')->where('user_id', $admin->getKey())->exists())->toBeFalse();
+});
+
+it('still succeeds on a non-database session driver', function (): void {
+    config()->set('session.driver', 'array');
+
+    $admin = createProtectedSuperAdmin();
+    $token = Password::broker()->getRepository()->create($admin);
+
+    $this->post('/superadmin/reset', [
+        'token' => $token,
+        'password' => 'brand-new-password-123',
+        'password_confirmation' => 'brand-new-password-123',
+    ])->assertRedirect('/superadmin')->assertSessionHas('superadmin-status');
 });
 
 it('rejects a short password', function (): void {

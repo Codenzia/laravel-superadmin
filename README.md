@@ -105,6 +105,8 @@ Security model: the send endpoint **only ever emails the protected account's own
 
 The flow is self-contained — it does not use the host's `password.reset` route, so it works on Filament-only apps with no auth scaffolding. It is **disabled by default** (it is an unauthenticated public endpoint); enable it deliberately with `SUPER_ADMIN_RECOVERY=true`. Configure it via `superadmin.recovery` (path, throttle) and prefer a non-default `SUPER_ADMIN_RECOVERY_PATH`. Views are publishable via `--tag=superadmin-views`.
 
+A successful reset rotates `remember_token` (evicting "remember me" cookies) and, when `session.driver` is `database`, deletes the protected user's session rows outright. On other session drivers (file, redis, cookie, …) a live attacker session is **not** automatically evicted on reset — add the framework's `AuthenticateSession` middleware to your `web` group if that matters for your threat model.
+
 The recovery anchor is the protected account's own email. By default that is **derived from your own domain** (`superadmin@<APP_URL host>`); set `SUPER_ADMIN_EMAIL` to pin a specific mailbox, and make sure it is deliverable to you in production.
 
 ## Default email resolution
