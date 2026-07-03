@@ -332,7 +332,7 @@ The plugin registers three defense-in-depth UX layers on the protected user row,
 
 1. **`DeleteAction` / `ForceDeleteAction` auto-hide** — original behavior. Admins never see a button that would only error at the observer layer.
 2. **Custom destructive row actions auto-hide.** Any `Filament\Actions\Action` whose `getName()` is in `filament.hidden_action_names` is hidden on the protected user. The default list catches the verbs we ship across our consumer apps: `delete`, `forceDelete`, `suspend`, `unsuspend`, `ban`, `unban`, `markEmailVerified`, `verify`, `unverify`, `impersonate`, `demote`.
-3. **Privileged form fields auto-disable.** Any `Filament\Forms\Components\Field` whose `getName()` is in `filament.locked_field_names` is disabled when the form's record is the super admin. Default list: `roles`, `role`, `permissions`, `status`, `is_protected`, `email`, `user_type`. Closes the "admin demotes the super admin via the roles Select" loophole.
+3. **Privileged form fields auto-disable.** Any `Filament\Forms\Components\Field` whose `getName()` is in `filament.locked_field_names` is disabled when the form's record is the super admin. Default list: `roles`, `role`, `permissions`, `status`, `is_protected`, `email`, `user_type`, `password`, `password_confirmation`. Closes the "admin demotes the super admin via the roles Select" loophole, and the "admin takes over the account via the password field" loophole.
 
 Apps extend the defaults via config, no code:
 

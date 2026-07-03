@@ -132,6 +132,18 @@ it('auto-disables the is_protected field when editing the protected user', funct
     expect(buildFieldDisabledFor(Toggle::class, 'is_protected', $protected))->toBeTrue();
 });
 
+it('auto-disables the password field when editing the protected user', function (): void {
+    $protected = createProtectedSuperAdmin();
+
+    expect(buildFieldDisabledFor(TextInput::class, 'password', $protected))->toBeTrue();
+});
+
+it('does not disable the password field when editing a regular user', function (): void {
+    $regular = createUser('regular@aqarkom.test');
+
+    expect(buildFieldDisabledFor(TextInput::class, 'password', $regular))->toBeFalse();
+});
+
 it('does not disable locked-name fields when editing a regular user', function (): void {
     $regular = createUser('regular@aqarkom.test');
 

@@ -239,6 +239,8 @@ return [
             'is_protected',
             'email',
             'user_type',
+            'password',
+            'password_confirmation',
         ],
     ],
 
