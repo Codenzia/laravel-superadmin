@@ -232,7 +232,7 @@ final class SuperAdminManager
             return null;
         }
 
-        return $model::query()->where('is_protected', true)->first();
+        return $model::query()->where('is_protected', true)->orderBy($instance->getKeyName())->first();
     }
 
     /**
