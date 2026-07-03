@@ -96,9 +96,11 @@ return [
         'path' => env('SUPER_ADMIN_RECOVERY_PATH', 'superadmin'),
 
         // Max requests per IP within the decay window, plus an app-wide cap
-        // shared by all IPs (stops distributed probing).
+        // shared by all IPs (stops distributed probing). A full legitimate
+        // flow (send -> GET form -> POST update) consumes 3 of these, so the
+        // default leaves room for one retry inside the window.
         'throttle' => [
-            'max_attempts' => 3,
+            'max_attempts' => 5,
             'global_max_attempts' => 10,
             'decay_seconds' => 3600,
         ],

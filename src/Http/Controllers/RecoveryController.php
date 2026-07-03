@@ -68,6 +68,10 @@ final class RecoveryController
 
     public function form(Request $request, SuperAdminManager $manager, string $token): View|RedirectResponse
     {
+        if ($response = $this->throttle($request)) {
+            return $response;
+        }
+
         // Validate the token up front so a stale/expired link fails fast,
         // instead of letting the user fill in a password and only learn on
         // POST that the link was invalid. (The POST path re-checks anyway.)

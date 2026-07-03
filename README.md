@@ -101,7 +101,7 @@ GET  /superadmin/reset/{token} choose-a-new-password form (token single-use)
 POST /superadmin/reset         applies it
 ```
 
-Security model: the send endpoint **only ever emails the protected account's own address** and responds identically whether or not the account exists — a guessable URL leaks nothing and can at worst add noise to your own mailbox. All endpoints share a per-IP and a global rate limit (3/hour per IP, 10/hour app-wide by default), and every request is logged (`Super admin recovery link requested.`) so you can monitor probing. The reset email names the app and host, so an unsolicited link doubles as an alert.
+Security model: the send endpoint **only ever emails the protected account's own address** and responds identically whether or not the account exists — a guessable URL leaks nothing and can at worst add noise to your own mailbox. All endpoints (including the reset-form `GET`) share a per-IP and a global rate limit (5/hour per IP, 10/hour app-wide by default), and every request is logged (`Super admin recovery link requested.`) so you can monitor probing. The reset email names the app and host, so an unsolicited link doubles as an alert.
 
 The flow is self-contained — it does not use the host's `password.reset` route, so it works on Filament-only apps with no auth scaffolding. It is **disabled by default** (it is an unauthenticated public endpoint); enable it deliberately with `SUPER_ADMIN_RECOVERY=true`. Configure it via `superadmin.recovery` (path, throttle) and prefer a non-default `SUPER_ADMIN_RECOVERY_PATH`. Views are publishable via `--tag=superadmin-views`.
 
@@ -204,7 +204,7 @@ return [
     'recovery' => [
         'enabled'  => env('SUPER_ADMIN_RECOVERY', false),
         'path'     => env('SUPER_ADMIN_RECOVERY_PATH', 'superadmin'),
-        'throttle' => ['max_attempts' => 3, 'global_max_attempts' => 10, 'decay_seconds' => 3600],
+        'throttle' => ['max_attempts' => 5, 'global_max_attempts' => 10, 'decay_seconds' => 3600],
     ],
 
     'user_model'            => null,                                              // null = resolved from auth.providers

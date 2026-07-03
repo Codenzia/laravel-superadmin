@@ -49,11 +49,26 @@ it('throttles repeated send attempts per ip', function (): void {
     Notification::fake();
     createProtectedSuperAdmin();
 
-    for ($attempt = 0; $attempt < 3; $attempt++) {
+    $maxAttempts = (int) config('superadmin.recovery.throttle.max_attempts');
+
+    for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
         $this->post('/superadmin')->assertSessionHas('superadmin-status');
     }
 
     $this->post('/superadmin')->assertSessionHasErrors('throttle');
+});
+
+it('throttles the reset-form GET endpoint after exhausting attempts', function (): void {
+    $admin = createProtectedSuperAdmin();
+    $token = Password::broker()->getRepository()->create($admin);
+
+    $maxAttempts = (int) config('superadmin.recovery.throttle.max_attempts');
+
+    for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
+        $this->get('/superadmin/reset/'.$token);
+    }
+
+    $this->get('/superadmin/reset/'.$token)->assertSessionHasErrors('throttle');
 });
 
 it('resets the password with a valid token', function (): void {
