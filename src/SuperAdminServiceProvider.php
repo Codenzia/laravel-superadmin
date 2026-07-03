@@ -178,7 +178,9 @@ final class SuperAdminServiceProvider extends ServiceProvider
                 $email = (string) $user->getAttribute('email');
                 $password = $manager->knownDefaultPassword();
 
-                if ($password !== null) {
+                if ($password !== null && $manager->configuredPassword() !== null) {
+                    fwrite(STDOUT, "  ✓ Created protected super admin: {$email} (password: set via SUPER_ADMIN_PASSWORD)".PHP_EOL);
+                } elseif ($password !== null) {
                     fwrite(STDOUT, "  ✓ Created protected super admin: {$email} (password: {$password})".PHP_EOL);
                 } else {
                     $path = trim((string) config('superadmin.recovery.path', 'superadmin'), '/');

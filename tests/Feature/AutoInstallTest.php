@@ -67,3 +67,27 @@ it('auto-install handler swallows install failures and lets migrate finish', fun
     // No user created, no exception bubbled up.
     expect(true)->toBeTrue();
 });
+
+it('does not echo an env-sourced password to migrate output', function (): void {
+    config()->set('superadmin.auto_install', true);
+    config()->set('superadmin.password', 'my-secret-env-password');
+
+    $output = captureStdout(function (): void {
+        Event::dispatch(new MigrationsEnded('up', []));
+    });
+
+    expect($output)
+        ->toContain('password: set via SUPER_ADMIN_PASSWORD')
+        ->not->toContain('my-secret-env-password');
+});
+
+it('shows the local literal password when no env override is set', function (): void {
+    config()->set('superadmin.auto_install', true);
+    config()->set('superadmin.password', null);
+
+    $output = captureStdout(function (): void {
+        Event::dispatch(new MigrationsEnded('up', []));
+    });
+
+    expect($output)->toContain('password: superadmin');
+});

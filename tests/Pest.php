@@ -42,3 +42,47 @@ function createUser(string $email = 'regular@aqarkom.test'): User
         'is_protected' => false,
     ]);
 }
+
+/**
+ * Captures raw `fwrite(STDOUT, ...)` output produced while `$callback` runs
+ * (e.g. the auto-install hook's CLI messages), which normal output
+ * buffering / `expectOutputString()` cannot see since it bypasses PHP's
+ * output buffer entirely. Uses a stream filter appended directly to the
+ * STDOUT resource.
+ */
+function captureStdout(callable $callback): string
+{
+    static $registered = false;
+
+    if (! $registered) {
+        stream_filter_register('superadmin-test-stdout-capture', StdoutCaptureFilter::class);
+        $registered = true;
+    }
+
+    StdoutCaptureFilter::$buffer = '';
+    $filter = stream_filter_append(STDOUT, 'superadmin-test-stdout-capture');
+
+    try {
+        $callback();
+    } finally {
+        stream_filter_remove($filter);
+    }
+
+    return StdoutCaptureFilter::$buffer;
+}
+
+final class StdoutCaptureFilter extends php_user_filter
+{
+    public static string $buffer = '';
+
+    public function filter($in, $out, &$consumed, bool $closing): int
+    {
+        while ($bucket = stream_bucket_make_writeable($in)) {
+            self::$buffer .= $bucket->data;
+            $consumed += $bucket->datalen;
+            stream_bucket_append($out, $bucket);
+        }
+
+        return PSFS_PASS_ON;
+    }
+}
