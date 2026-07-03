@@ -307,7 +307,7 @@ final class SuperAdminServiceProvider extends ServiceProvider
                 return;
             }
 
-            if ($superAdminRoleId === false) {
+            if ($superAdminRoleId === false || $superAdminRoleId === null) {
                 $superAdminRoleId = $roleClass::where('name', $configuredRole)->value('id');
             }
 
