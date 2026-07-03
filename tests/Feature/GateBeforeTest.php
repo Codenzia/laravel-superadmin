@@ -7,8 +7,6 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Hash;
 
 beforeEach(function (): void {
-    configureSuperAdmin('superadmin@aqarkom.test');
-
     // Baseline ability that returns false for everyone — so anything that
     // passes must have been granted by the package's Gate::before.
     Gate::define('do-anything', fn (): bool => false);

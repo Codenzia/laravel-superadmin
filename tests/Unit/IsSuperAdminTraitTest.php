@@ -6,10 +6,6 @@ use Codenzia\SuperAdmin\Tests\Fixtures\User;
 use Codenzia\SuperAdmin\Tests\Fixtures\UserWithRoles;
 use Illuminate\Support\Facades\Hash;
 
-beforeEach(function (): void {
-    configureSuperAdmin('superadmin@aqarkom.test');
-});
-
 it('isSuperAdmin() returns true for a flagged user', function (): void {
     $user = createProtectedSuperAdmin();
 

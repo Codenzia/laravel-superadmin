@@ -24,7 +24,6 @@ beforeEach(function (): void {
     config()->set('superadmin.user_model', UserWithRoles::class);
     config()->set('filament-shield.super_admin.name', 'super_admin');
     UserWithRoles::$rolesInDatabase = ['super_admin'];
-    configureSuperAdmin('superadmin@aqarkom.test');
 
     Gate::define('do-anything', fn (): bool => false);
 });

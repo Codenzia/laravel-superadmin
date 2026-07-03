@@ -38,8 +38,6 @@ function buildFieldDisabledFor(string $fieldClass, string $name, ?Model $record)
 }
 
 beforeEach(function (): void {
-    configureSuperAdmin('superadmin@aqarkom.test');
-
     // Reset Filament's component manager between tests so the configureUsing
     // registrations from previous tests don't bleed across. The manager is
     // a singleton — replace it with a fresh instance, then re-register the

@@ -47,7 +47,6 @@ it('auto-install is a no-op when superadmin.auto_install is false', function ():
 
 it('auto-install is a no-op when a protected user already exists', function (): void {
     config()->set('superadmin.auto_install', true);
-    configureSuperAdmin('superadmin@aqarkom.test');
     $original = createProtectedSuperAdmin('superadmin@aqarkom.test', 'do-not-touch');
 
     Event::dispatch(new MigrationsEnded('up', []));

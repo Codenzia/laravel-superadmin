@@ -13,7 +13,6 @@ beforeEach(function (): void {
     UserWithRoles::reset();
     config()->set('auth.providers.users.model', UserWithRoles::class);
     config()->set('superadmin.user_model', UserWithRoles::class);
-    configureSuperAdmin('superadmin@aqarkom.test');
 });
 
 it('returns NotSupported when User model has no assignRole method', function (): void {

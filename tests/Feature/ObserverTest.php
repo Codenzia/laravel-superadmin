@@ -5,10 +5,6 @@ declare(strict_types=1);
 use Codenzia\SuperAdmin\Exceptions\ProtectedAccountException;
 use Codenzia\SuperAdmin\Facades\SuperAdmin;
 
-beforeEach(function (): void {
-    configureSuperAdmin('superadmin@aqarkom.test');
-});
-
 it('blocks deletion of the protected super admin', function (): void {
     $user = createProtectedSuperAdmin();
 

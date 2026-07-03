@@ -3,15 +3,12 @@
 declare(strict_types=1);
 
 it('reports missing-account state and exits non-zero', function (): void {
-    configureSuperAdmin();
-
     $this->artisan('superadmin:status')
         ->expectsOutputToContain('account is missing')
         ->assertExitCode(1);
 });
 
 it('reports healthy state when the protected user exists', function (): void {
-    configureSuperAdmin();
     createProtectedSuperAdmin();
 
     $this->artisan('superadmin:status')
@@ -45,7 +42,6 @@ it('labels an env-managed password as such', function (): void {
 });
 
 it('displays the is_protected flag value in the summary table', function (): void {
-    configureSuperAdmin();
     createProtectedSuperAdmin();
 
     $this->artisan('superadmin:status')
@@ -64,7 +60,6 @@ it('skips the summary email row when no email is configured (falls back to defau
 });
 
 it('runs full diagnostics under --verbose and passes for a healthy install', function (): void {
-    configureSuperAdmin();
     createProtectedSuperAdmin();
 
     $this->artisan('superadmin:status', ['--verbose' => true])
