@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="noindex, nofollow">
     <title>{{ config('app.name') }} — {{ __('Super Admin Recovery') }}</title>
+    {{-- Self-contained on purpose: break-glass must render with zero build assets, so no Tailwind classes here. --}}
     <style>
         :root {
             color-scheme: light dark;
