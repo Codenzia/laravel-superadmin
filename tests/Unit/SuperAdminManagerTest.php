@@ -230,6 +230,12 @@ it('ensure() returns the existing superadmin untouched without re-hashing the pa
     expect(Hash::check('do-not-rotate-me', $returned->password))->toBeTrue();
 });
 
+it('ensure() lowercases a mixed-case email', function (): void {
+    $user = SuperAdmin::ensure(['email' => 'MiXeD@Case.test']);
+
+    expect($user->email)->toBe('mixed@case.test');
+});
+
 it('ensure() is idempotent across repeated calls', function (): void {
     $a = SuperAdmin::ensure();
     $b = SuperAdmin::ensure();

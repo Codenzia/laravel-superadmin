@@ -308,6 +308,7 @@ final class SuperAdminManager
         }
 
         $email ??= $this->defaultEmail();
+        $email = mb_strtolower($email);
 
         return $this->withoutProtection(function () use ($model, $email, $password, $name): Model {
             // Prefer the protected row; fall back to claiming an existing

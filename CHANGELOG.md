@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`GET /superadmin/reset/{token}` now validates the token up front** and redirects with an error on a stale/expired link, instead of rendering the form and only failing on submit.
 
 ### Changed
+- **`install()` now lowercases the target email before use.** A seeder passing a mixed-case email (e.g. `'Email@X.COM'`) previously stored it as-is, diverging from every other identity path (`findByEmail()` is case-insensitive so no duplicate row resulted, but the stored casing was inconsistent). Format validation remains the interactive command's job (`superadmin:ensure`); seeder input is developer-controlled.
 - **`SuperAdminManager::user()` now orders by primary key** before taking the first `is_protected` row, so identity resolution is deterministic if more than one protected row ever exists (instead of depending on DB query plan).
 - **Recovery password update now validates via `UpdateRecoveryPasswordRequest`** instead of an inline `$request->validate()`, using `Illuminate\Validation\Rules\Password::min(12)->max(255)` for stronger strength rules on the highest-privilege endpoint in the fleet.
 - Removed dead code: the inert email-identity branches in `is()` / `user()` / the observer, and the never-produced `RoleAssignmentResult::Disabled` case (with `describe()` strings updated to current config reality).
