@@ -10,6 +10,17 @@ use Illuminate\Database\Eloquent\Model;
 
 final class SuperAdminObserver
 {
+    public function creating(Model $user): void
+    {
+        if (SuperAdmin::isProtectionBypassed()) {
+            return;
+        }
+
+        if ((bool) $user->getAttribute('is_protected')) {
+            throw ProtectedAccountException::cannotProtect();
+        }
+    }
+
     public function deleting(Model $user): void
     {
         if (SuperAdmin::isProtectionBypassed()) {

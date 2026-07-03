@@ -109,7 +109,17 @@ it('withoutProtection allows promoting a regular user to protected', function ()
     expect((bool) $user->fresh()->is_protected)->toBeTrue();
 });
 
-it('creating a user with is_protected = true is allowed (insert, not update)', function (): void {
+it('blocks creating a user with is_protected = true outside withoutProtection', function (): void {
+    expect(fn () => Codenzia\SuperAdmin\Tests\Fixtures\User::query()->create([
+        'name' => 'Attacker',
+        'email' => 'attacker-create@aqarkom.test',
+        'password' => bcrypt('password-1234'),
+        'email_verified_at' => now(),
+        'is_protected' => true,
+    ]))->toThrow(ProtectedAccountException::class);
+});
+
+it('allows creating a user with is_protected = true inside withoutProtection', function (): void {
     $user = createProtectedSuperAdmin('seeded@aqarkom.test');
 
     expect((bool) $user->fresh()->is_protected)->toBeTrue();

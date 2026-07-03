@@ -158,12 +158,12 @@ it('exists() reflects database state', function (): void {
 });
 
 it('user() finds the is_protected row', function (): void {
-    $flagged = User::query()->create([
+    $flagged = SuperAdmin::withoutProtection(fn (): User => User::query()->create([
         'name' => 'Flagged',
         'email' => 'other@aqarkom.test',
         'password' => Hash::make('pw-1234567890'),
         'is_protected' => true,
-    ]);
+    ]));
 
     $found = SuperAdmin::user();
 

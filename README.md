@@ -140,7 +140,7 @@ Four protection layers — each independent, so tampering with one doesn't silen
 
 | Layer | Behavior |
 |---|---|
-| Eloquent observer | Throws `ProtectedAccountException` on **delete**, **email change**, **unprotect (`true → false`)**, and **promote (`false → true` outside `withoutProtection()`)**. The last is what blocks mass-assignment escalation when a consumer app puts `is_protected` in `$fillable`. |
+| Eloquent observer | Throws `ProtectedAccountException` on **delete**, **email change**, **unprotect (`true → false`)**, and **promote (`false → true` on update or create, outside `withoutProtection()`)**. This is what blocks mass-assignment escalation when a consumer app puts `is_protected` in `$fillable`, including via `create()`. |
 | `Gate::before` | Returns `true` for the protected user on every `can()` / policy / `@can` check — no Spatie or Shield required |
 | Filament plugin (UX layer) | Auto-hides destructive row actions (`delete`, `suspend`, `ban`, `impersonate`, …) and auto-disables privileged form fields (`roles`, `status`, `email`, `is_protected`, …) on the protected user row. Zero per-resource code. See [Filament](#filament) below. |
 | Late role assignment | Wildcard `eloquent.created` listener that retroactively assigns the configured role to the protected user the moment the role row exists (typically after `migrate --seed`). |
@@ -149,7 +149,7 @@ The observer is defense-in-depth. Use the facade in your policies for proper HTT
 
 ### App-side defense-in-depth (recommended)
 
-Even with the observer guarding `false → true` promotion, you should keep `is_protected` out of the User model's `$fillable`. The observer only fires on `update`, and only inside Eloquent — raw `DB::table('users')->update(...)` calls bypass it. The two-layer pattern:
+Even with the observer guarding `false → true` promotion on both `create` and `update`, you should keep `is_protected` out of the User model's `$fillable`. The observer only fires inside Eloquent — raw `DB::table('users')->insert(...)` / `->update(...)` calls bypass it. The two-layer pattern:
 
 ```php
 class User extends Authenticatable

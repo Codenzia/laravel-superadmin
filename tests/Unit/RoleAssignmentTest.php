@@ -21,12 +21,12 @@ it('returns NotSupported when User model has no assignRole method', function ():
     config()->set('auth.providers.users.model', User::class);
     config()->set('superadmin.user_model', User::class);
 
-    $user = User::query()->create([
+    $user = SuperAdmin::withoutProtection(fn (): User => User::query()->create([
         'name' => 'Admin',
         'email' => 'superadmin@aqarkom.test',
         'password' => Hash::make('pw-1234567890'),
         'is_protected' => true,
-    ]);
+    ]));
 
     expect(SuperAdmin::assignRole($user))->toBe(RoleAssignmentResult::NotSupported);
 });
