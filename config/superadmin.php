@@ -98,7 +98,10 @@ return [
         // Max requests per IP within the decay window, plus an app-wide cap
         // shared by all IPs (stops distributed probing). A full legitimate
         // flow (send -> GET form -> POST update) consumes 3 of these, so the
-        // default leaves room for one retry inside the window.
+        // default leaves room for one retry inside the window. Tradeoff: the
+        // global cap means an attacker can lock out the legitimate operator
+        // for the decay window — `php artisan superadmin:ensure` remains
+        // available (unthrottled, requires CLI access) during any lockout.
         'throttle' => [
             'max_attempts' => 5,
             'global_max_attempts' => 10,
