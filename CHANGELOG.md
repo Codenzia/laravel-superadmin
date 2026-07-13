@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-13
+
 ### Security
 - **`SuperAdminServiceProvider`'s role-promotion guard no longer permanently disables itself.** The memoized super-admin role id used a `false` "not yet resolved" sentinel, but a `null` lookup (role row doesn't exist yet) was also cached — silently turning the guard off for the rest of the process once that happened. A `null` result is now retried on the next pivot attach instead of being cached.
 - **`SuperAdminObserver` now guards `is_protected = true` on `create()`, not just `update()`.** Previously only flipping the flag on an existing row was blocked; inserting a brand-new row with `is_protected` already `true` (e.g. via `$fillable` mass-assignment, `Model::unguard()`, or a registration flow passing raw input into `create()`) minted an unauthenticated god-account. Now throws `ProtectedAccountException` outside `SuperAdmin::withoutProtection()`, which the package's own `install()` / `ensure()` already use.
@@ -223,7 +225,8 @@ Then replace any seeder calls to `SuperAdmin::install(...)` with `SuperAdmin::en
 
 Initial release.
 
-[Unreleased]: https://github.com/Codenzia/laravel-superadmin/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/Codenzia/laravel-superadmin/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/Codenzia/laravel-superadmin/compare/v0.5.2...v0.6.0
 [0.3.2]: https://github.com/Codenzia/laravel-superadmin/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/Codenzia/laravel-superadmin/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Codenzia/laravel-superadmin/compare/v0.2.0...v0.3.0
