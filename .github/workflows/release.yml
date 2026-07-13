@@ -20,5 +20,5 @@ jobs:
     # makes GitHub reject the run at startup (startup_failure, no jobs).
     permissions:
       contents: write
-    uses: Codenzia/plugin-runtime/.github/workflows/plugin-release.yml@main
+    uses: Codenzia/plugin-runtime/.github/workflows/plugin-release.yml@v1.1.0
     secrets: inherit

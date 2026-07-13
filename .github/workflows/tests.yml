@@ -11,4 +11,4 @@ on:
 
 jobs:
   tests:
-    uses: Codenzia/plugin-runtime/.github/workflows/plugin-tests.yml@main
+    uses: Codenzia/plugin-runtime/.github/workflows/plugin-tests.yml@v1.1.0
