@@ -114,13 +114,36 @@ final class EnsureCommand extends Command
         }
 
         $verb = $existing === null ? 'Created' : 'Updated';
-        $this->info('  ✓ '.$verb.' protected super admin: '.$user->getAttribute('email'));
+        $this->info('  ✓ '.$verb.' protected super admin: '.$user->getAttribute('email').$this->roleSuffix($manager, $user));
 
         if ($passwordForEnsure === null) {
             $this->line('  · Password unchanged.');
         }
 
         return self::SUCCESS;
+    }
+
+    /**
+     * A `" (role: <name>)"` suffix describing the configured super-admin role
+     * and whether the protected account actually holds it — surfaced so the
+     * CLI reflects the package's role-ensure behavior. Empty when no role is
+     * resolvable / the User model has no Spatie roles.
+     */
+    private function roleSuffix(SuperAdminManager $manager, object $user): string
+    {
+        $role = $manager->configuredRole();
+
+        if ($role === null) {
+            return '';
+        }
+
+        $held = $manager->hasConfiguredRole($user);
+
+        if ($held === null) {
+            return '';
+        }
+
+        return ' (role: '.$role.($held ? '' : ' — NOT assigned').')';
     }
 
     /**
@@ -187,7 +210,7 @@ final class EnsureCommand extends Command
             ? 'created'
             : ($passwordForEnsure === null ? 'unchanged (password kept)' : 'updated');
 
-        $this->info('  ✓ superadmin:ensure --from-env: '.$verb.' — '.$user->getAttribute('email'));
+        $this->info('  ✓ superadmin:ensure --from-env: '.$verb.' — '.$user->getAttribute('email').$this->roleSuffix($manager, $user));
 
         return self::SUCCESS;
     }

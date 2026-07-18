@@ -50,6 +50,12 @@ final class StatusCommand extends Command
 
         $rows[] = ['Protection enabled', config('superadmin.protection.enabled', true) ? 'yes' : 'NO'];
         $rows[] = ['Role', (string) ($manager->configuredRole() ?? '<none>')];
+
+        if ($user !== null) {
+            $held = $manager->hasConfiguredRole($user);
+            $rows[] = ['Role assigned', $held === null ? 'n/a (no Spatie roles)' : ($held ? 'yes' : 'NO')];
+        }
+
         $rows[] = ['Auto-install on migrate', config('superadmin.auto_install', true) ? 'yes' : 'NO'];
 
         $this->table(['Setting', 'Value'], $rows);

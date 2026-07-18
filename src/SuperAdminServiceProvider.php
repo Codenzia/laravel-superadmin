@@ -13,6 +13,7 @@ use Codenzia\SuperAdmin\Support\SuperAdminManager;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Events\MigrationsEnded;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Route;
@@ -258,15 +259,25 @@ final class SuperAdminServiceProvider extends ServiceProvider
 
     /**
      * Prevent any user other than the protected super admin from being assigned
-     * the super_admin role via Eloquent pivot operations (syncRoles, assignRole,
-     * roles()->attach(), etc.).
+     * the super-admin (privileged) role through Spatie's `assignRole()` /
+     * `syncRoles()`.
      *
-     * Hooks into the `eloquent.pivotAttaching` wildcard event which fires
-     * before Spatie's BelongsToMany writes the model_has_roles pivot row.
-     * Throws ProtectedAccountException so the DB is never left in a bad state.
+     * Mechanism: Laravel core fires NO "pivot attaching" event, so the pivot
+     * write cannot be intercepted before it happens. Spatie's `assignRole()`
+     * does `$user->roles()->attach(...)` (a direct pivot insert) and then, when
+     * `permission.events_enabled` is on, dispatches `RoleAttachedEvent`. That
+     * post-write event is the only reliable hook that fires on a REAL
+     * `assignRole()`, so the guard:
+     *   1. force-enables `permission.events_enabled` (benign — extra Spatie
+     *      events only) so the event is guaranteed to fire, then
+     *   2. on `RoleAttachedEvent`, if a non-protected user was just given the
+     *      configured super-admin role, DETACHES that row (so the DB is never
+     *      left privileged) and throws ProtectedAccountException.
      *
-     * Protected by `superadmin.protection.prevent_role_promotion` (default true)
-     * and skipped when the protection bypass is active (e.g. during install).
+     * The protected account and the package's own bypassed provisioning
+     * (install / ensure / late role assignment) are always allowed to hold the
+     * role. No-op without spatie/laravel-permission. Gated by
+     * `superadmin.protection.prevent_role_promotion` (default true).
      */
     private function registerRolePromotionGuard(): void
     {
@@ -274,34 +285,34 @@ final class SuperAdminServiceProvider extends ServiceProvider
             return;
         }
 
-        /** @var SuperAdminManager $manager */
-        $manager = $this->app->make(SuperAdminManager::class);
+        $eventClass = 'Spatie\\Permission\\Events\\RoleAttachedEvent';
 
-        // Resolved super-admin role id, memoized in the closure scope so a
-        // bulk syncRoles across many users does not re-query per pivot attach.
-        // `false` = not yet resolved; null/int = resolved value.
-        $superAdminRoleId = false;
+        // Degrade gracefully when spatie/laravel-permission is absent.
+        if (! class_exists($eventClass)) {
+            return;
+        }
 
-        Event::listen('eloquent.pivotAttaching: *', function (string $event, array $payload) use ($manager, &$superAdminRoleId): void {
+        // Spatie only dispatches its role/permission events when this flag is
+        // on (default off). Enable it so the guard can fire; harmless to hosts
+        // that don't listen for those events.
+        $this->app['config']->set('permission.events_enabled', true);
+
+        Event::listen($eventClass, function (object $event): void {
+            /** @var SuperAdminManager $manager */
+            $manager = $this->app->make(SuperAdminManager::class);
+
+            // The package's own provisioning wraps writes in withoutProtection().
             if ($manager->isProtectionBypassed()) {
                 return;
             }
 
-            /** @var Model $user */
-            $user = $payload[0] ?? null;
-            $relationName = $payload[1] ?? null;
-
-            if (! $user instanceof Model || $relationName !== 'roles') {
+            $user = $event->model ?? null;
+            if (! $user instanceof Model) {
                 return;
             }
 
-            // Already the protected account — allowed (e.g. late role assignment).
+            // The protected account is allowed to hold the role.
             if ((bool) $user->getAttribute('is_protected')) {
-                return;
-            }
-
-            $roleClass = $this->resolveRoleModel();
-            if ($roleClass === null) {
                 return;
             }
 
@@ -310,35 +321,63 @@ final class SuperAdminServiceProvider extends ServiceProvider
                 return;
             }
 
-            if ($superAdminRoleId === false || $superAdminRoleId === null) {
-                $superAdminRoleId = $roleClass::where('name', $configuredRole)->value('id');
+            $roleClass = $this->resolveRoleModel();
+            if ($roleClass === null) {
+                return;
             }
 
-            $attachingIds = (array) ($payload[2] ?? []);
-
-            if ($superAdminRoleId !== null && in_array($superAdminRoleId, $attachingIds, false)) {
-                throw ProtectedAccountException::cannotAssignSuperAdminRole();
+            $superAdminRoleId = $roleClass::query()->where('name', $configuredRole)->value('id');
+            if ($superAdminRoleId === null) {
+                return;
             }
+
+            if (! $this->attachedRolesInclude($event->rolesOrIds ?? [], $superAdminRoleId)) {
+                return;
+            }
+
+            // Undo the just-written privileged pivot row, then signal the
+            // violation. Detaching does not re-enter this listener (only
+            // attach fires RoleAttachedEvent).
+            if (method_exists($user, 'roles')) {
+                $user->roles()->detach($superAdminRoleId);
+                $user->unsetRelation('roles');
+            }
+
+            throw ProtectedAccountException::cannotAssignSuperAdminRole();
         });
     }
 
     /**
-     * Resolve the Spatie Role model class. Returns null when
-     * spatie/laravel-permission is not installed in the host app, so the
-     * package degrades gracefully.
+     * Whether the roles just attached (as reported by Spatie's
+     * RoleAttachedEvent — an array/Collection of ids or Role models) include
+     * the given super-admin role id.
+     */
+    private function attachedRolesInclude(mixed $rolesOrIds, int|string $superAdminRoleId): bool
+    {
+        $items = $rolesOrIds instanceof Collection
+            ? $rolesOrIds->all()
+            : (array) $rolesOrIds;
+
+        foreach ($items as $item) {
+            $id = $item instanceof Model ? $item->getKey() : $item;
+
+            if ((string) $id === (string) $superAdminRoleId) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Resolve the Spatie Role model class (delegates to the manager). Returns
+     * null when spatie/laravel-permission is not installed, so the package
+     * degrades gracefully.
      *
      * @return class-string<Model>|null
      */
     private function resolveRoleModel(): ?string
     {
-        $configured = $this->app['config']->get('permission.models.role');
-
-        if (is_string($configured) && $configured !== '' && class_exists($configured)) {
-            return $configured;
-        }
-
-        $canonical = 'Spatie\\Permission\\Models\\Role';
-
-        return class_exists($canonical) ? $canonical : null;
+        return $this->app->make(SuperAdminManager::class)->roleModel();
     }
 }

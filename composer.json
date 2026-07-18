@@ -34,7 +34,8 @@
         "mockery/mockery": "^1.6",
         "orchestra/testbench": "^10.0 || ^11.0",
         "pestphp/pest": "^4.0",
-        "pestphp/pest-plugin-laravel": "^4.0"
+        "pestphp/pest-plugin-laravel": "^4.0",
+        "spatie/laravel-permission": "^6.16 || ^7.0 || ^8.0"
     },
     "suggest": {
         "filament/filament": "Required for the optional Filament v4 or v5 panel integration (hides destructive actions on the protected account)",

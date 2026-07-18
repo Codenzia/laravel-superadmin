@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 use Codenzia\SuperAdmin\Facades\SuperAdmin;
 use Codenzia\SuperAdmin\Tests\Fixtures\User;
+use Codenzia\SuperAdmin\Tests\SpatieTestCase;
 use Codenzia\SuperAdmin\Tests\TestCase;
 use Illuminate\Support\Facades\Hash;
 
 uses(TestCase::class)->in('Feature', 'Unit');
+uses(SpatieTestCase::class)->in('Spatie');
 
 function createProtectedSuperAdmin(string $email = 'superadmin@aqarkom.test', string $password = 'super-secret-pw-12345'): User
 {

@@ -65,6 +65,44 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Role (opt-in, Spatie-gated)
+    |--------------------------------------------------------------------------
+    |
+    | Optional. When set to a non-empty role name AND spatie/laravel-permission
+    | is installed, the protected super admin is ensured to HOLD this role on
+    | every install / `superadmin:ensure` (and via the late-role-assignment
+    | listener). The role row is created if it does not exist yet
+    | (firstOrCreate by name + guard), so role-based access gates — e.g.
+    | Filament's `canAccessPanel()` calling `hasAnyRole(...)` — admit the god
+    | account with zero per-app code.
+    |
+    | When null/empty (the default) behavior is UNCHANGED: the package does not
+    | create the role and only performs its existing best-effort assignment of
+    | the auto-resolved role (Shield's `filament-shield.super_admin.name`, else
+    | the literal `super_admin`). It never removes roles the user already has.
+    |
+    | Degrades gracefully when spatie/laravel-permission is absent (no fatal):
+    | the whole feature is guarded behind the Role model's presence.
+    |
+    */
+
+    'role' => env('SUPER_ADMIN_ROLE'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Role Guard
+    |--------------------------------------------------------------------------
+    |
+    | Optional guard name used when creating the role above (Spatie stores a
+    | `guard_name` per role). When null (default) it falls back to the app's
+    | default guard (`auth.defaults.guard`). Only relevant when `role` is set.
+    |
+    */
+
+    'role_guard' => env('SUPER_ADMIN_ROLE_GUARD'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Recovery Route
     |--------------------------------------------------------------------------
     |

@@ -396,18 +396,56 @@ final class SuperAdminManager
     }
 
     /**
+     * The role name explicitly opted into via `superadmin.role`
+     * (env `SUPER_ADMIN_ROLE`), or null when unset. This is the only source
+     * that also *creates* the role row (see ensureRoleExists()); the Shield /
+     * literal fallbacks below are best-effort assign-only.
+     */
+    public function explicitRole(): ?string
+    {
+        $configured = $this->config()->get('superadmin.role');
+
+        return is_string($configured) && $configured !== '' ? $configured : null;
+    }
+
+    /**
+     * Guard name used when creating the configured role. Falls back to the
+     * app's default guard (`auth.defaults.guard`) when `superadmin.role_guard`
+     * is unset.
+     */
+    public function roleGuard(): string
+    {
+        $configured = $this->config()->get('superadmin.role_guard');
+
+        if (is_string($configured) && $configured !== '') {
+            return $configured;
+        }
+
+        $default = $this->config()->get('auth.defaults.guard');
+
+        return is_string($default) && $default !== '' ? $default : 'web';
+    }
+
+    /**
      * Role assigned to the protected super admin.
      *
-     * Resolution order (v0.4.0+ — no env/config key):
+     * Resolution order:
      *
-     *   1. `filament-shield.super_admin.name` — auto-discovered when the
+     *   1. `superadmin.role` (env `SUPER_ADMIN_ROLE`) — the explicit opt-in.
+     *   2. `filament-shield.super_admin.name` — auto-discovered when the
      *      host app has `bezhansalleh/filament-shield` installed and
      *      configured. Shield's config is the source of truth.
-     *   2. Literal `'super_admin'` — hardcoded fallback when Shield is not
-     *      present or its value is empty.
+     *   3. Literal `'super_admin'` — hardcoded fallback when neither of the
+     *      above is present or set.
      */
     public function configuredRole(): ?string
     {
+        $explicit = $this->explicitRole();
+
+        if ($explicit !== null) {
+            return $explicit;
+        }
+
         $shield = $this->config()->get('filament-shield.super_admin.name');
 
         if (is_string($shield) && $shield !== '') {
@@ -415,6 +453,56 @@ final class SuperAdminManager
         }
 
         return 'super_admin';
+    }
+
+    /**
+     * Resolve the Spatie Role model class, or null when
+     * spatie/laravel-permission is not installed. Guards every role-creation
+     * path so the package degrades gracefully without Spatie.
+     *
+     * @return class-string<Model>|null
+     */
+    public function roleModel(): ?string
+    {
+        $configured = $this->config()->get('permission.models.role');
+
+        if (is_string($configured) && $configured !== '' && class_exists($configured)) {
+            return $configured;
+        }
+
+        $canonical = 'Spatie\\Permission\\Models\\Role';
+
+        return class_exists($canonical) ? $canonical : null;
+    }
+
+    /**
+     * Ensure the given role row exists so a create-from-absent install can
+     * assign it. Only fires when the role was EXPLICITLY opted into via
+     * `superadmin.role` — the Shield / literal fallbacks stay assign-only, so
+     * a null `superadmin.role` leaves role rows untouched. No-op (never fatal)
+     * when spatie/laravel-permission is absent. Best-effort: swallows failures.
+     */
+    private function ensureRoleExists(string $role): void
+    {
+        if ($this->explicitRole() === null) {
+            return;
+        }
+
+        $roleModel = $this->roleModel();
+
+        if ($roleModel === null) {
+            return;
+        }
+
+        try {
+            $roleModel::query()->firstOrCreate([
+                'name' => $role,
+                'guard_name' => $this->roleGuard(),
+            ]);
+        } catch (Throwable) {
+            // Best-effort — assignRole() below reports Failed if it can't
+            // resolve the role for any reason.
+        }
     }
 
     /**
@@ -434,6 +522,10 @@ final class SuperAdminManager
         }
 
         try {
+            // When opted in via `superadmin.role`, create the role row first
+            // so a fresh install (role does not exist yet) still succeeds.
+            $this->ensureRoleExists($role);
+
             if (method_exists($user, 'hasRole') && $user->hasRole($role)) {
                 return RoleAssignmentResult::AlreadyAssigned;
             }

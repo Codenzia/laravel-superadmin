@@ -391,11 +391,22 @@ it('configuredRole() falls back to literal "super_admin" when Shield is not conf
     expect($manager->configuredRole())->toBe('super_admin');
 });
 
-it('configuredRole() ignores any stale superadmin.role config in v0.4.0', function (): void {
-    config()->set('superadmin.role', 'legacy-role');
+it('configuredRole() prefers the explicit superadmin.role over Shield and the literal fallback', function (): void {
+    config()->set('superadmin.role', 'god');
+    config()->set('filament-shield.super_admin.name', 'shield-defined-role');
+
+    $manager = app(SuperAdminManager::class);
+
+    expect($manager->configuredRole())->toBe('god');
+    expect($manager->explicitRole())->toBe('god');
+});
+
+it('explicitRole() is null and configuredRole() falls back when superadmin.role is unset', function (): void {
+    config()->set('superadmin.role', null);
     config()->set('filament-shield.super_admin.name', null);
 
     $manager = app(SuperAdminManager::class);
 
+    expect($manager->explicitRole())->toBeNull();
     expect($manager->configuredRole())->toBe('super_admin');
 });

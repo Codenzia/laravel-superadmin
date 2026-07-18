@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-07-18
+
+### Added
+- **Opt-in role assignment via `SUPER_ADMIN_ROLE` (config `superadmin.role`, plus `superadmin.role_guard` / `SUPER_ADMIN_ROLE_GUARD`).** When set to a non-empty role name **and** `spatie/laravel-permission` is installed, the protected super admin is ensured to *hold* that role on every install / `superadmin:ensure` (and via the late-role-assignment listener) — **creating the role row if it does not exist yet** (`firstOrCreate` by name + guard). This lets role-based access gates (e.g. Filament's `canAccessPanel()` calling `hasAnyRole(...)`) admit the god account with zero per-app code. The guard name defaults to the app's default guard (`auth.defaults.guard`) unless `role_guard` is set. `superadmin.role` now takes precedence in `configuredRole()` (over the Shield-discovered name and the literal `super_admin` fallback). When `superadmin.role` is null the behavior is unchanged: no role row is created and only the pre-existing best-effort assignment of the auto-resolved role runs; no role is ever removed. Spatie-gated throughout (`class_exists`/model resolution) — a no-op, never a fatal, without Spatie. Surfaced in `superadmin:ensure` output (`(role: <name>)`) and in `superadmin:status` (new "Role assigned" row).
+
+### Security
+- **Role-promotion guard now actually blocks a real `assignRole()` / `syncRoles()`.** The previous guard listened on `eloquent.pivotAttaching`, an event **Laravel core never fires** (verified against `illuminate/database` — only custom-Pivot `deleting`/`deleted` events exist; there is no attaching event). Spatie's `assignRole()` writes the `model_has_roles` pivot with a direct `attach()` and emits **no** interceptable pre-write event, so the guard was inert against every real promotion path and its tests only passed because they hand-dispatched the phantom event. The guard now hooks Spatie's `RoleAttachedEvent` — the one event that fires on a genuine write — force-enabling `permission.events_enabled` (benign; extra Spatie events only) so it is guaranteed to fire, then, when a **non-protected** user is given the configured super-admin role, **detaches the just-written pivot row and throws `ProtectedAccountException`** (DB never left privileged). The protected account and the package's own bypassed provisioning (install / ensure / late role assignment) are always allowed to hold the role, so this does not fight the new role-ensure feature. No-op without `spatie/laravel-permission`. Tests were rewritten to drive real `assignRole()` / `syncRoles()` against a live Spatie stack instead of dispatching the event manually.
+
 ## [0.6.1] - 2026-07-18
 
 ### Added

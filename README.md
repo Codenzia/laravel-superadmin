@@ -128,9 +128,24 @@ When the seeder doesn't pass `email`:
 
 The configured email is a **creation default only** — identification of the protected account is always by the `is_protected` column, never by email, so a user who happens to register the well-known address gains nothing.
 
+## Ensuring the super admin holds a role — `SUPER_ADMIN_ROLE` (opt-in)
+
+Some apps gate access by role rather than by `Gate::before` — e.g. a Filament panel whose `canAccessPanel()` calls `$user->hasAnyRole([...])`. Such gates lock out the protected account unless it actually *holds* a role. Set **`SUPER_ADMIN_ROLE`** (config `superadmin.role`) to have the package ensure it does:
+
+```dotenv
+SUPER_ADMIN_ROLE=super_admin
+# SUPER_ADMIN_ROLE_GUARD=web   # optional; defaults to auth.defaults.guard
+```
+
+When set (and `spatie/laravel-permission` is installed) the protected super admin is ensured to hold that role on every install / `superadmin:ensure` — **the role row is created if it doesn't exist yet** (`firstOrCreate` by name + guard), so it works even before any seeder runs. This is **opt-in and Spatie-gated**: when `SUPER_ADMIN_ROLE` is unset, or `spatie/laravel-permission` isn't installed, nothing changes — no role is created, none is removed, and the package's existing best-effort assignment of the auto-resolved role (below) still applies. It never removes roles the user already has.
+
+`superadmin.role` takes precedence over the Shield-discovered name and the literal fallback in `configuredRole()`. The role name and whether the account holds it are shown in `superadmin:ensure` output (`(role: <name>)`) and `superadmin:status`.
+
+> The related **role-promotion guard** (`superadmin.protection.prevent_role_promotion`, default on) is the mirror image: it blocks assigning the super-admin role to *any other* user through Spatie's `assignRole()` / `syncRoles()` — only the protected account may hold it. It requires `spatie/laravel-permission` and enables `permission.events_enabled` so it can intercept the write.
+
 ## Default role resolution (Filament Shield bridge)
 
-When `bezhansalleh/filament-shield` is installed, `configuredRole()` auto-discovers Shield's super-admin role name from `filament-shield.super_admin.name`. Apps don't need to set the role name in two places. When Shield is not present, the package falls back to the literal `'super_admin'`.
+When `bezhansalleh/filament-shield` is installed, `configuredRole()` auto-discovers Shield's super-admin role name from `filament-shield.super_admin.name` (unless `SUPER_ADMIN_ROLE` is set, which wins). Apps don't need to set the role name in two places. When neither is present, the package falls back to the literal `'super_admin'`.
 
 ### "Is this user a super admin?" — `isSuperAdmin()`
 
@@ -209,6 +224,13 @@ return [
     // production. For local dev and vendor-controlled live demos. When not
     // set: "superadmin" in local/testing only, random everywhere else.
     'password'              => env('SUPER_ADMIN_PASSWORD'),
+
+    // Opt-in, Spatie-gated. When set, the protected super admin is ensured to
+    // HOLD this role on every install/ensure (the role row is created if
+    // missing). Null = unchanged (no role touched). See "Ensuring the super
+    // admin holds a role".
+    'role'                  => env('SUPER_ADMIN_ROLE'),
+    'role_guard'            => env('SUPER_ADMIN_ROLE_GUARD'),                      // null = auth.defaults.guard
 
     // Break-glass recovery flow — disabled by default (opt in). See
     // "Password defaults & the recovery route".
