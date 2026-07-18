@@ -63,6 +63,68 @@ it('falls back to defaultPassword() when password is blank on a brand-new accoun
     expect(Hash::check('superadmin', $user->password))->toBeTrue();
 });
 
+it('--from-env creates the account from configured credentials when absent', function (): void {
+    config()->set('superadmin.email', 'env-admin@aqarkom.test');
+    config()->set('superadmin.password', 'env-password-123');
+
+    $this->artisan('superadmin:ensure', ['--from-env' => true])->assertSuccessful();
+
+    $user = SuperAdmin::user();
+    expect($user)->not->toBeNull();
+    expect($user->email)->toBe('env-admin@aqarkom.test');
+    expect((bool) $user->is_protected)->toBeTrue();
+    expect(Hash::check('env-password-123', $user->password))->toBeTrue();
+});
+
+it('--from-env updates the password of an existing account', function (): void {
+    createProtectedSuperAdmin('current@aqarkom.test', 'old-password');
+
+    config()->set('superadmin.email', 'current@aqarkom.test');
+    config()->set('superadmin.password', 'rotated-password-456');
+
+    $this->artisan('superadmin:ensure', ['--from-env' => true])->assertSuccessful();
+
+    $user = SuperAdmin::user();
+    expect(Hash::check('rotated-password-456', $user->password))->toBeTrue();
+    expect(Hash::check('old-password', $user->password))->toBeFalse();
+});
+
+it('--from-env fails when the configured email is empty', function (): void {
+    config()->set('superadmin.email', '');
+    config()->set('superadmin.password', 'whatever');
+
+    $this->artisan('superadmin:ensure', ['--from-env' => true])
+        ->assertExitCode(Command::FAILURE);
+
+    expect(SuperAdmin::user())->toBeNull();
+});
+
+it('--from-env with explicit --password overrides the configured password', function (): void {
+    config()->set('superadmin.email', 'env-admin@aqarkom.test');
+    config()->set('superadmin.password', 'config-password');
+
+    $this->artisan('superadmin:ensure', [
+        '--from-env' => true,
+        '--password' => 'explicit-wins-789',
+    ])->assertSuccessful();
+
+    $user = SuperAdmin::user();
+    expect(Hash::check('explicit-wins-789', $user->password))->toBeTrue();
+    expect(Hash::check('config-password', $user->password))->toBeFalse();
+});
+
+it('--from-env keeps the current password of an existing account when config password is empty', function (): void {
+    createProtectedSuperAdmin('current@aqarkom.test', 'keep-this-pw');
+
+    config()->set('superadmin.email', 'current@aqarkom.test');
+    config()->set('superadmin.password', '');
+
+    $this->artisan('superadmin:ensure', ['--from-env' => true])->assertSuccessful();
+
+    $user = SuperAdmin::user();
+    expect(Hash::check('keep-this-pw', $user->password))->toBeTrue();
+});
+
 it('does NOT write any credentials to .env', function (): void {
     // Point Laravel at a temp .env so we can read it back.
     $envPath = sys_get_temp_dir().DIRECTORY_SEPARATOR.'superadmin-ensure-test-'.uniqid('', true).'.env';

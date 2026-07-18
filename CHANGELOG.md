@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-07-18
+
+### Added
+- **`superadmin:ensure --from-env` flag.** Applies the configured credentials (`config('superadmin.email')` / `config('superadmin.password')` — i.e. `SUPER_ADMIN_EMAIL` / `SUPER_ADMIN_PASSWORD` via config, respecting config caching) to the protected account **non-interactively**: creates it when missing, otherwise updates email + password to match config. The name keeps the existing value (or the package default on create). This lets deploy pipelines push `.env` credential changes without shell-parsing the `.env` themselves — previously an existing account under `--no-interaction` kept its current password, so consuming apps' CI resorted to parsing the `.env` directly as a workaround. If the configured email is empty the command errors with a `FAILURE` exit; if the configured password is empty an existing account keeps its current hash (and says so) while a new account follows the default-password path. Explicit `--email` / `--password` options win over config. Never prompts and never prints the password; the one-line result (created / updated / unchanged + email) is CI-log friendly.
+
 ## [0.6.0] - 2026-07-13
 
 ### Security

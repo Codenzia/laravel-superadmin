@@ -81,6 +81,15 @@ Non-interactive variant:
 php artisan superadmin:ensure --email=admin@your-app.test --password='your-strong-password'
 ```
 
+**Deploy pipelines — `--from-env`.** Applies the configured `SUPER_ADMIN_EMAIL` / `SUPER_ADMIN_PASSWORD` (read via config, so it honors config caching) to the protected account non-interactively — create if missing, otherwise update email + password to match config:
+
+```bash
+php artisan superadmin:ensure --from-env
+# ✓ superadmin:ensure --from-env: updated — admin@your-app.test
+```
+
+This lets a deploy step push `.env` credential changes without shell-parsing the `.env` itself (the plain command leaves an existing account's password untouched under `--no-interaction`). Details: an empty configured email errors with a non-zero exit; an empty configured password keeps the existing account's current password (a new account follows the normal default-password path). Explicit `--email` / `--password` win over config. It never prompts and never prints the password. The name keeps its current value (or the package default on create).
+
 `superadmin:ensure` never reads or writes `.env`. Plaintext only lives in the seeder source (committed to your repo with code) or in the operator's terminal during rotation.
 
 ## Password defaults & the recovery route
@@ -169,7 +178,7 @@ class User extends Authenticatable
 
 | Command | Purpose |
 |---|---|
-| `superadmin:ensure` | Create or update the protected user. **DB-only — never reads or writes `.env`.** Interactive prompts for name / email / password; pass any subset as flags to skip prompts. |
+| `superadmin:ensure` | Create or update the protected user. **DB-only — never reads or writes `.env`.** Interactive prompts for name / email / password; pass any subset as flags to skip prompts. Add `--from-env` to apply the configured `SUPER_ADMIN_EMAIL` / `SUPER_ADMIN_PASSWORD` non-interactively (for deploy pipelines). |
 | `superadmin:status` | Summary of the protected user — **the one place credentials are displayed on demand**. The Password row is verified against the stored hash: it shows the working default/env value, or "rotated/unknown" with the recovery paths. Never prints a stale or random password. Exits non-zero if missing. |
 | `superadmin:status --verbose` | Adds the full health diagnostic matrix (model resolvable, column exists, protection enabled, role assigned, etc.). |
 

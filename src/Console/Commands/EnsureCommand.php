@@ -12,7 +12,7 @@ use Illuminate\Console\Command;
  * protected super admin. DB-only: never reads or writes `.env`. Replaces
  * the v0.3.x `superadmin:setup` command.
  *
- * Three usage modes:
+ * Usage modes:
  *
  *   - Interactive (no flags): prompts for name, email, password with the
  *     current values (or package defaults for a brand-new account) as
@@ -20,6 +20,11 @@ use Illuminate\Console\Command;
  *   - Flag-only: any subset of `--name --email --password` skips the
  *     corresponding prompt.
  *   - Mixed: prompts only for the missing pieces.
+ *   - `--from-env`: fully non-interactive. Applies the configured credentials
+ *     (`config('superadmin.email')` / `config('superadmin.password')` — i.e.
+ *     `SUPER_ADMIN_EMAIL` / `SUPER_ADMIN_PASSWORD` via config, respecting
+ *     config caching) to the protected account so deploy pipelines can push
+ *     `.env` credential changes without shell-parsing the `.env` themselves.
  *
  * Role is NOT prompted — it is auto-resolved via
  * `SuperAdminManager::configuredRole()` which reads
@@ -30,13 +35,18 @@ final class EnsureCommand extends Command
 {
     protected $signature = 'superadmin:ensure
         {--name= : Set the super admin name (skips the name prompt)}
-        {--email= : Set the super admin email (skips the email prompt)}
-        {--password= : Set the super admin password (skips the password prompt)}';
+        {--email= : Set the super admin email (skips the email prompt; wins over config with --from-env)}
+        {--password= : Set the super admin password (skips the password prompt; wins over config with --from-env)}
+        {--from-env : Apply the configured SUPER_ADMIN_EMAIL / SUPER_ADMIN_PASSWORD (via config) non-interactively — for deploy pipelines}';
 
     protected $description = 'Create or update the protected super admin in the database. Never touches .env.';
 
     public function handle(SuperAdminManager $manager): int
     {
+        if ($this->option('from-env') === true) {
+            return $this->handleFromEnv($manager);
+        }
+
         $existing = $manager->user();
 
         // ---- Name ----
@@ -109,6 +119,75 @@ final class EnsureCommand extends Command
         if ($passwordForEnsure === null) {
             $this->line('  · Password unchanged.');
         }
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * `--from-env`: apply the configured credentials to the protected account,
+     * non-interactively. Create when missing, otherwise UPDATE email + password
+     * to match config. Explicit `--email` / `--password` options win over
+     * config. Never prompts. Never prints the password.
+     */
+    private function handleFromEnv(SuperAdminManager $manager): int
+    {
+        $existing = $manager->user();
+
+        // ---- Email — explicit --email wins over config ----
+        $emailOption = $this->option('email');
+        $email = is_string($emailOption) && $emailOption !== ''
+            ? $emailOption
+            : (string) $this->laravel['config']->get('superadmin.email', '');
+
+        if ($email === '') {
+            $this->error('No super admin email configured. Set SUPER_ADMIN_EMAIL (config superadmin.email) or pass --email.');
+
+            return self::FAILURE;
+        }
+
+        if (filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
+            $this->error('A valid email is required.');
+
+            return self::INVALID;
+        }
+        $email = mb_strtolower($email);
+
+        // ---- Password — explicit --password wins over config ----
+        $passwordOption = $this->option('password');
+        $password = is_string($passwordOption) && $passwordOption !== ''
+            ? $passwordOption
+            : $manager->configuredPassword();
+
+        // Empty password: new account → default-password path; existing
+        // account → keep the current hash (null skips the password attribute).
+        $passwordForEnsure = ($password === null || $password === '')
+            ? ($existing === null ? $manager->defaultPassword() : null)
+            : $password;
+
+        // ---- Name — keep existing, else the package default ----
+        $currentName = $existing?->getAttribute('name');
+        $name = is_string($currentName) && $currentName !== ''
+            ? $currentName
+            : $manager->defaultName();
+
+        // ---- Apply ----
+        try {
+            $user = $manager->ensure([
+                'name' => $name,
+                'email' => $email,
+                'password' => $passwordForEnsure,
+            ]);
+        } catch (\Throwable $e) {
+            $this->error('Failed to update super admin: '.$e->getMessage());
+
+            return self::FAILURE;
+        }
+
+        $verb = $existing === null
+            ? 'created'
+            : ($passwordForEnsure === null ? 'unchanged (password kept)' : 'updated');
+
+        $this->info('  ✓ superadmin:ensure --from-env: '.$verb.' — '.$user->getAttribute('email'));
 
         return self::SUCCESS;
     }
