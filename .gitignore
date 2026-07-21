@@ -17,3 +17,6 @@ fable-*
 *-plan*
 *execution-log*
 *checkpoint*
+
+# internal review docs
+fable-*.md
