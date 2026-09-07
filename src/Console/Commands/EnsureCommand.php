@@ -20,6 +20,10 @@ use Illuminate\Console\Command;
  *   - Flag-only: any subset of `--name --email --password` skips the
  *     corresponding prompt.
  *   - Mixed: prompts only for the missing pieces.
+ *   - `--adopt`: allows promoting an account that ALREADY holds the target
+ *     email into the protected super admin. Without it that case is refused,
+ *     so a plain registration is never silently turned into the god account.
+ *     An adoption always rotates the password and the remember token.
  *   - `--from-env`: fully non-interactive. Applies the configured credentials
  *     (`config('superadmin.email')` / `config('superadmin.password')` — i.e.
  *     `SUPER_ADMIN_EMAIL` / `SUPER_ADMIN_PASSWORD` via config, respecting
@@ -37,7 +41,8 @@ final class EnsureCommand extends Command
         {--name= : Set the super admin name (skips the name prompt)}
         {--email= : Set the super admin email (skips the email prompt; wins over config with --from-env)}
         {--password= : Set the super admin password (skips the password prompt; wins over config with --from-env)}
-        {--from-env : Apply the configured SUPER_ADMIN_EMAIL / SUPER_ADMIN_PASSWORD (via config) non-interactively — for deploy pipelines}';
+        {--from-env : Apply the configured SUPER_ADMIN_EMAIL / SUPER_ADMIN_PASSWORD (via config) non-interactively — for deploy pipelines}
+        {--adopt : Promote an EXISTING account that already holds the target email, rotating its password and remember token}';
 
     protected $description = 'Create or update the protected super admin in the database. Never touches .env.';
 
@@ -106,6 +111,7 @@ final class EnsureCommand extends Command
                 'name' => $name,
                 'email' => $email,
                 'password' => $passwordForEnsure,
+                'adopt' => $this->option('adopt') === true,
             ]);
         } catch (\Throwable $e) {
             $this->error('Failed to update super admin: '.$e->getMessage());
@@ -199,6 +205,7 @@ final class EnsureCommand extends Command
                 'name' => $name,
                 'email' => $email,
                 'password' => $passwordForEnsure,
+                'adopt' => $this->option('adopt') === true,
             ]);
         } catch (\Throwable $e) {
             $this->error('Failed to update super admin: '.$e->getMessage());

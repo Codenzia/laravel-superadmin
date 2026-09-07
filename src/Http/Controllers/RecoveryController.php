@@ -13,6 +13,7 @@ use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Password;
@@ -113,10 +114,14 @@ final class RecoveryController
         // forceFill: password / remember_token may be guarded on host models.
         // Rotating remember_token immediately invalidates any persistent
         // "remember me" cookies — break-glass should evict any live attacker.
-        $user->forceFill([
-            'password' => Hash::make($validated['password']),
-            'remember_token' => Str::random(60),
-        ])->save();
+        // withoutProtection: recovery is a trusted credential capability, so it
+        // is the path allowed through the observer's locked-attribute guard.
+        $manager->withoutProtection(function () use ($user, $validated): void {
+            $user->forceFill([
+                'password' => Hash::make($validated['password']),
+                'remember_token' => Str::random(60),
+            ])->save();
+        });
 
         Password::broker()->getRepository()->delete($user);
 
@@ -143,6 +148,12 @@ final class RecoveryController
     /**
      * Best-effort eviction of the protected user's live sessions when the
      * host uses the database session driver. Never breaks the reset itself.
+     *
+     * The rows are deleted on the connection the session driver itself writes
+     * to (`session.connection`, null meaning the default one) — NOT the user
+     * model's connection. Hosts that keep users on a tenant/application
+     * database while sessions live on a central one would otherwise delete
+     * from the wrong database and leave the live session standing.
      */
     private function evictDatabaseSessions(Model $user): void
     {
@@ -150,8 +161,10 @@ final class RecoveryController
             return;
         }
 
+        $connection = config('session.connection');
+
         try {
-            $user->getConnection()
+            DB::connection(is_string($connection) && $connection !== '' ? $connection : null)
                 ->table(config('session.table', 'sessions'))
                 ->where('user_id', $user->getKey())
                 ->delete();

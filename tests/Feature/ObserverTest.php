@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Codenzia\SuperAdmin\Exceptions\ProtectedAccountException;
 use Codenzia\SuperAdmin\Facades\SuperAdmin;
 use Codenzia\SuperAdmin\Tests\Fixtures\User;
+use Illuminate\Support\Facades\Hash;
 
 it('blocks deletion of the protected super admin', function (): void {
     $user = createProtectedSuperAdmin();
@@ -48,14 +49,15 @@ it('blocks flipping is_protected from false to true on a regular user', function
     expect((bool) $user->fresh()->is_protected)->toBeFalse();
 });
 
-it('allows password changes on the protected super admin', function (): void {
+it('blocks password changes on the protected super admin through the attribute setter', function (): void {
     $user = createProtectedSuperAdmin();
     $original = $user->password;
 
     $user->password = bcrypt('completely-new-password');
-    $user->save();
 
-    expect($user->fresh()->password)->not->toBe($original);
+    expect(fn () => $user->save())->toThrow(ProtectedAccountException::class);
+
+    expect($user->fresh()->password)->toBe($original);
 });
 
 it('allows name changes on the protected super admin', function (): void {
@@ -120,4 +122,47 @@ it('allows creating a user with is_protected = true inside withoutProtection', f
     $user = createProtectedSuperAdmin('seeded@aqarkom.test');
 
     expect((bool) $user->fresh()->is_protected)->toBeTrue();
+});
+
+it('blocks a direct password write on the protected super admin', function (): void {
+    // The escalation this closes: a host "reset password" action or bulk
+    // update sets a password on the god account and signs in as it.
+    $admin = createProtectedSuperAdmin(password: 'original-password-123');
+
+    expect(fn () => $admin->forceFill(['password' => bcrypt('attacker-chosen-pw')])->save())
+        ->toThrow(ProtectedAccountException::class);
+
+    expect(Hash::check('original-password-123', $admin->fresh()->password))->toBeTrue();
+});
+
+it('blocks a remember_token write on the protected super admin', function (): void {
+    $admin = createProtectedSuperAdmin();
+
+    expect(fn () => $admin->forceFill(['remember_token' => 'attacker-token'])->save())
+        ->toThrow(ProtectedAccountException::class);
+});
+
+it('allows a password write on the protected super admin inside withoutProtection', function (): void {
+    $admin = createProtectedSuperAdmin(password: 'original-password-123');
+
+    SuperAdmin::withoutProtection(fn () => $admin->forceFill(['password' => Hash::make('rotated-by-cli-99')])->save());
+
+    expect(Hash::check('rotated-by-cli-99', $admin->fresh()->password))->toBeTrue();
+});
+
+it('leaves password writes on ordinary users alone', function (): void {
+    $user = createUser('ordinary@aqarkom.test');
+
+    $user->forceFill(['password' => Hash::make('their-own-new-pw')])->save();
+
+    expect(Hash::check('their-own-new-pw', $user->fresh()->password))->toBeTrue();
+});
+
+it('honors an empty locked_attributes list', function (): void {
+    config()->set('superadmin.protection.locked_attributes', []);
+    $admin = createProtectedSuperAdmin(password: 'original-password-123');
+
+    $admin->forceFill(['password' => Hash::make('host-managed-pw')])->save();
+
+    expect(Hash::check('host-managed-pw', $admin->fresh()->password))->toBeTrue();
 });

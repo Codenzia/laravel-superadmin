@@ -213,6 +213,23 @@ return [
         | before the pivot write, so the DB is never in a bad state.
         */
         'prevent_role_promotion' => (bool) env('SUPER_ADMIN_PREVENT_ROLE_PROMOTION', true),
+
+        /*
+        | Attributes that cannot be written on the protected super admin from
+        | anywhere but the package's own trusted paths (`superadmin:ensure` /
+        | `SuperAdmin::withoutProtection()` / the recovery route). Hiding the
+        | password field in an admin form is a UI affordance, not
+        | authorization: a host's custom "reset password" action, a bulk
+        | update or a direct service write would otherwise let staff set a
+        | password on the god account and sign in as it.
+        |
+        | Add your own privileged columns here (e.g. 'status', 'user_type').
+        | Set to an empty array to turn the guard off.
+        */
+        'locked_attributes' => [
+            'password',
+            'remember_token',
+        ],
     ],
 
     /*

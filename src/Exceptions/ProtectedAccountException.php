@@ -35,4 +35,22 @@ final class ProtectedAccountException extends RuntimeException
     {
         return new self('The super_admin role can only be held by the protected super admin account.');
     }
+
+    public static function cannotAdoptExistingAccount(string $email): self
+    {
+        return new self(
+            'An existing account already uses '.$email.', so the protected super admin cannot be installed there. '
+            .'Provision a different address, or adopt that account deliberately with '
+            .'`php artisan superadmin:ensure --adopt` (or SuperAdmin::ensure([..., \'adopt\' => true])), '
+            .'which rotates its password and remember token.'
+        );
+    }
+
+    public static function cannotChangeLockedAttribute(string $attribute): self
+    {
+        return new self(
+            'The protected super admin\'s "'.$attribute.'" cannot be changed outside of SuperAdmin::withoutProtection(). '
+            .'Use `php artisan superadmin:ensure` or the break-glass recovery route.'
+        );
+    }
 }

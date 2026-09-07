@@ -270,6 +270,41 @@ it('ensure([password]) updates the password on an existing user', function (): v
     expect(Hash::check('brand-new-pw-5678', $user->password))->toBeTrue();
 });
 
+it('ensure([password]) leaves the name and email of an existing user untouched', function (): void {
+    // A password-only ensure must not silently redirect recovery mail to the
+    // derived default address or reset an operator-set display name.
+    $admin = createProtectedSuperAdmin('custom@example.test', 'old-password-1234');
+    SuperAdmin::withoutProtection(fn () => $admin->forceFill(['name' => 'Custom Operator'])->save());
+
+    SuperAdmin::ensure(['password' => 'brand-new-pw-5678']);
+
+    $user = SuperAdmin::user();
+    expect($user->email)->toBe('custom@example.test')
+        ->and($user->name)->toBe('Custom Operator')
+        ->and(Hash::check('brand-new-pw-5678', $user->password))->toBeTrue();
+});
+
+it('ensure([]) with no keys leaves an existing user completely untouched', function (): void {
+    $admin = createProtectedSuperAdmin('custom@example.test', 'keep-this-password');
+    SuperAdmin::withoutProtection(fn () => $admin->forceFill(['name' => 'Custom Operator'])->save());
+
+    SuperAdmin::ensure([]);
+
+    $user = SuperAdmin::user();
+    expect($user->email)->toBe('custom@example.test')
+        ->and($user->name)->toBe('Custom Operator')
+        ->and(Hash::check('keep-this-password', $user->password))->toBeTrue();
+});
+
+it('ensure([name => null]) treats an explicit null as "no change"', function (): void {
+    $admin = createProtectedSuperAdmin('custom@example.test', 'keep-this-password');
+    SuperAdmin::withoutProtection(fn () => $admin->forceFill(['name' => 'Custom Operator'])->save());
+
+    SuperAdmin::ensure(['name' => null]);
+
+    expect(SuperAdmin::user()->name)->toBe('Custom Operator');
+});
+
 it('ensure([email]) updates the email and preserves the password on an existing user', function (): void {
     createProtectedSuperAdmin('original@aqarkom.test', 'keep-this-password');
 

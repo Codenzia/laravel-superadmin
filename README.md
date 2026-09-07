@@ -189,12 +189,31 @@ class User extends Authenticatable
 }
 ```
 
+### Locked credential attributes
+
+Filament's field auto-lock is a UI affordance, not authorization. A host's own "reset password" action, a bulk update or a direct service write reaches the model regardless. The observer therefore refuses any write to the protected account's `superadmin.protection.locked_attributes` (default `password`, `remember_token`) unless it comes through the package's trusted paths — `SuperAdmin::withoutProtection()`, `superadmin:ensure`, or the recovery route:
+
+```php
+// config/superadmin.php
+'protection' => [
+    'locked_attributes' => [
+        'password',
+        'remember_token',
+        'status', // add your own privileged columns
+    ],
+],
+```
+
+Set it to `[]` to keep the pre-0.7 behavior, where any Eloquent write could re-credential the protected row.
+
+Not covered, by design: raw SQL, and role *removal* (the protected account authorizes through `Gate::before`, so losing the role costs it nothing).
+
 ## Commands
 
 | Command | Purpose |
 |---|---|
-| `superadmin:ensure` | Create or update the protected user. **DB-only — never reads or writes `.env`.** Interactive prompts for name / email / password; pass any subset as flags to skip prompts. Add `--from-env` to apply the configured `SUPER_ADMIN_EMAIL` / `SUPER_ADMIN_PASSWORD` non-interactively (for deploy pipelines). |
-| `superadmin:status` | Summary of the protected user — **the one place credentials are displayed on demand**. The Password row is verified against the stored hash: it shows the working default/env value, or "rotated/unknown" with the recovery paths. Never prints a stale or random password. Exits non-zero if missing. |
+| `superadmin:ensure` | Create or update the protected user. **DB-only — never reads or writes `.env`.** Interactive prompts for name / email / password; pass any subset as flags to skip prompts. Add `--from-env` to apply the configured `SUPER_ADMIN_EMAIL` / `SUPER_ADMIN_PASSWORD` non-interactively (for deploy pipelines). Add `--adopt` to promote an account that already holds the target email (rotates its password and remember token). |
+| `superadmin:status` | Summary of the protected user. The Password row reports **state only** — "configured" (the stored hash matches `SUPER_ADMIN_PASSWORD` or the environment's package default) or "not configured" with the host's actual recovery path. **The value is never printed**, so the command is safe to run into CI logs and log collectors. Exits non-zero if missing. |
 | `superadmin:status --verbose` | Adds the full health diagnostic matrix (model resolvable, column exists, protection enabled, role assigned, etc.). |
 
 ```bash
@@ -300,6 +319,14 @@ class DemoSeeder extends Seeder
 
 The array form `SuperAdmin::ensure(['name' => ..., 'email' => ..., 'password' => ...])` still exists as an escape hatch (it force-applies the supplied fields), but committing credentials to a seeder defeats the model — don't use it in Codenzia repos. For raw create/update use `SuperAdmin::install($password, $email, $name)`.
 
+Only the keys you actually pass are written. A password-only `ensure(['password' => ...])` leaves the account's name and email exactly as they are — it never resets a custom recovery mailbox back to the derived default. Omitted keys fall back to the package defaults on **create** only.
+
+### Adopting an existing account
+
+If no protected account exists yet but an ordinary account already holds the target email, `ensure()` / `install()` **refuse** and throw `ProtectedAccountException`. Silently promoting that row would hand the gate-bypassing identity to whoever knows its existing password, along with any live "remember me" cookie it issued.
+
+To claim it deliberately, opt in — `SuperAdmin::ensure([..., 'adopt' => true])` or `php artisan superadmin:ensure --adopt`. An adoption always rotates the password (to the one you supply, else a fresh package default) and the remember token.
+
 ## Integration patterns
 
 ### User model trait (optional)
@@ -382,6 +409,8 @@ Apps extend the defaults via config, no code:
     ],
 ],
 ```
+
+> **Named fields and actions are convenience UX, never authorization.** They cover the screens the plugin can see; server-side enforcement is the observer above plus your own policies on custom actions, bulk actions and non-Filament endpoints.
 
 > **Caveat.** Filament's `->hidden()` and `->disabled()` setters *replace* prior conditions (they don't AND/OR). If app code chains an explicit `->hidden(false)` *after* construction, the package's auto-hide is overridden. Apps that rely on `->visible(fn () => ...)` for conditional showing (the common pattern) are unaffected because `visible` and `hidden` are separate fields and an action is hidden when *either* hides it.
 

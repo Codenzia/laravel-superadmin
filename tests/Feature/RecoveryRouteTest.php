@@ -158,3 +158,51 @@ it('rejects a short password', function (): void {
         'password_confirmation' => 'short',
     ])->assertSessionHasErrors('password');
 });
+
+it('evicts sessions from the configured session connection, not the user connection', function (): void {
+    // Users on the application/tenant database, sessions on a central one.
+    $sessionDb = tempnam(sys_get_temp_dir(), 'superadmin-sessions').'.sqlite';
+    touch($sessionDb);
+
+    config()->set('database.connections.central_sessions', [
+        'driver' => 'sqlite',
+        'database' => $sessionDb,
+        'prefix' => '',
+    ]);
+    config()->set('session.driver', 'database');
+    config()->set('session.connection', 'central_sessions');
+    config()->set('session.table', 'sessions');
+
+    Schema::connection('central_sessions')->create('sessions', function ($table): void {
+        $table->string('id')->primary();
+        $table->unsignedBigInteger('user_id')->nullable();
+        $table->string('ip_address', 45)->nullable();
+        $table->text('user_agent')->nullable();
+        $table->text('payload');
+        $table->integer('last_activity');
+    });
+
+    $admin = createProtectedSuperAdmin();
+    $token = Password::broker()->getRepository()->create($admin);
+
+    DB::connection('central_sessions')->table('sessions')->insert([
+        'id' => 'attacker-session',
+        'user_id' => $admin->getKey(),
+        'payload' => 'irrelevant',
+        'last_activity' => time(),
+    ]);
+
+    try {
+        $this->post('/superadmin/reset', [
+            'token' => $token,
+            'password' => 'brand-new-password-123',
+            'password_confirmation' => 'brand-new-password-123',
+        ])->assertRedirect('/superadmin');
+
+        expect(DB::connection('central_sessions')->table('sessions')->where('user_id', $admin->getKey())->exists())
+            ->toBeFalse();
+    } finally {
+        DB::purge('central_sessions');
+        @unlink($sessionDb);
+    }
+});

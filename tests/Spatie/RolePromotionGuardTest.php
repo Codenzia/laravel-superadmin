@@ -91,3 +91,55 @@ it('lets the package own role-ensure assign the configured role to the protected
 
     expect($user->fresh()->hasRole('super_admin'))->toBeTrue();
 });
+
+it('blocks a same-named super_admin role from a different guard (api role created first)', function (): void {
+    // Spatie allows one name per guard. hasRole('super_admin') matches the NAME
+    // whichever guard issued it, so resolving a single first-match id let the
+    // second row through while still granting the privilege.
+    Role::query()->where('name', 'super_admin')->delete();
+    Role::query()->create(['name' => 'super_admin', 'guard_name' => 'api']);
+    $web = Role::query()->create(['name' => 'super_admin', 'guard_name' => 'web']);
+
+    $user = makeSpatieUser();
+
+    expect(fn () => $user->assignRole($web))
+        ->toThrow(ProtectedAccountException::class);
+
+    expect($user->fresh()->hasRole('super_admin'))->toBeFalse();
+});
+
+it('blocks a same-named super_admin role from a different guard (web role created first)', function (): void {
+    $api = Role::query()->create(['name' => 'super_admin', 'guard_name' => 'api']);
+
+    $user = makeSpatieUser();
+
+    expect(fn () => $user->assignRole($api))
+        ->toThrow(ProtectedAccountException::class);
+
+    expect($user->fresh()->roles()->count())->toBe(0);
+});
+
+it('detaches every forbidden role id when a mixed batch is assigned', function (): void {
+    Role::query()->create(['name' => 'super_admin', 'guard_name' => 'api']);
+    Role::query()->create(['name' => 'editor', 'guard_name' => 'web']);
+
+    $user = makeSpatieUser();
+
+    expect(fn () => $user->assignRole(['editor', 'super_admin']))
+        ->toThrow(ProtectedAccountException::class);
+
+    $fresh = $user->fresh();
+    expect($fresh->hasRole('super_admin'))->toBeFalse()
+        ->and($fresh->roles()->where('name', 'super_admin')->count())->toBe(0);
+});
+
+it('blocks the role when it is passed by raw id', function (): void {
+    $role = Role::query()->where('name', 'super_admin')->first();
+
+    $user = makeSpatieUser();
+
+    expect(fn () => $user->syncRoles([$role->getKey()]))
+        ->toThrow(ProtectedAccountException::class);
+
+    expect($user->fresh()->hasRole('super_admin'))->toBeFalse();
+});

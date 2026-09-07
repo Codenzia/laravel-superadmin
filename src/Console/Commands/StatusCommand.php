@@ -75,20 +75,42 @@ final class StatusCommand extends Command
     }
 
     /**
-     * The single place superadmin credentials are ever displayed on demand.
-     * Shows the password only when it verifiably matches the stored hash
-     * (env override or non-production default) — never a stale or random
-     * value; otherwise points at the recovery paths.
+     * Describes the stored password WITHOUT ever printing it. `superadmin:status`
+     * is run by deploy pipelines and health checks whose output lands in CI logs
+     * and log collectors that reach well beyond credential administrators, so a
+     * plaintext credential must never appear here — not even a verified one.
+     * The state (configured / package default / rotated) is what diagnostics
+     * actually need; the value itself is read from the operator's own secret
+     * store or replaced via the recovery route.
      */
     private function passwordRow(SuperAdminManager $manager): string
     {
         $verified = $manager->verifiedKnownPassword();
 
         if ($verified !== null) {
-            return $verified.($manager->configuredPassword() !== null ? ' (from SUPER_ADMIN_PASSWORD)' : ' (default)');
+            return $manager->configuredPassword() !== null
+                ? 'configured — matches SUPER_ADMIN_PASSWORD'
+                : 'configured — matches the package default for this environment';
         }
 
-        return 'rotated/unknown — reset via the /superadmin recovery route or `superadmin:ensure`';
+        return 'not configured — rotated or unknown; reset via '.$this->recoveryHint();
+    }
+
+    /**
+     * Where an operator actually resets the password on THIS host: the
+     * configured recovery path when the route is enabled, CLI only when it is
+     * not. The old text always pointed at `/superadmin`, which does not exist
+     * on the (default) hosts that leave recovery disabled or move the path.
+     */
+    private function recoveryHint(): string
+    {
+        if (! (bool) config('superadmin.recovery.enabled', false)) {
+            return '`php artisan superadmin:ensure` (web recovery is disabled)';
+        }
+
+        $path = trim((string) config('superadmin.recovery.path', 'superadmin'), '/');
+
+        return '/'.$path.' or `php artisan superadmin:ensure`';
     }
 
     /**
@@ -132,6 +154,15 @@ final class StatusCommand extends Command
         $rows[] = ['Protection observer', $protectionEnabled ? 'enabled' : 'DISABLED', $protectionEnabled ? '✓' : '⚠'];
         if (! $protectionEnabled) {
             $problems[] = 'Protection is disabled (superadmin.protection.enabled = false). The observer will not block delete / email-change / flag-change.';
+        }
+
+        if ($columnExists) {
+            $count = $manager->protectedAccountCount();
+
+            if ($count > 1) {
+                $rows[] = ['Protected accounts', (string) $count, '✗'];
+                $problems[] = 'There are '.$count.' accounts with is_protected = true. Identity resolution is ambiguous — the lowest id wins. Leave exactly one.';
+            }
         }
 
         if ($user !== null && $columnExists) {

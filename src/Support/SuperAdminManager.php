@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Codenzia\SuperAdmin\Support;
 
+use Codenzia\SuperAdmin\Exceptions\ProtectedAccountException;
 use Illuminate\Contracts\Config\Repository as ConfigRepository;
 use Illuminate\Contracts\Container\Container;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
@@ -16,7 +18,8 @@ final class SuperAdminManager
 {
     private bool $protectionBypassed = false;
 
-    private ?bool $hasProtectedColumn = null;
+    /** @var array<string, bool> */
+    private array $hasProtectedColumn = [];
 
     public function __construct(private readonly Container $app) {}
 
@@ -217,6 +220,19 @@ final class SuperAdminManager
         return $this->hasConfiguredRole($user) === true;
     }
 
+    /**
+     * The protected super admin row, or null when there is none.
+     *
+     * Global scopes are deliberately removed: the protected account is a
+     * single root identity, and a host scope (tenant, "approved only",
+     * soft-delete-adjacent filters) hiding it would make discovery report
+     * "missing" and let provisioning install a SECOND protected account. This
+     * is the same explicit provisioning scope policy findByEmail() applies.
+     *
+     * Deterministic on the lowest primary key when a host somehow holds more
+     * than one protected row; `superadmin:status` surfaces that as a problem
+     * (see protectedAccountCount()).
+     */
     public function user(): ?Model
     {
         $model = $this->userModel();
@@ -228,21 +244,58 @@ final class SuperAdminManager
         /** @var Model $instance */
         $instance = new $model;
 
-        if (! $this->hasProtectedColumn($instance->getTable())) {
+        if (! $this->hasProtectedColumn($instance)) {
             return null;
         }
 
-        return $model::query()->where('is_protected', true)->orderBy($instance->getKeyName())->first();
+        return $this->protectedQuery($model)->orderBy($instance->getKeyName())->first();
     }
 
     /**
-     * Memoized `is_protected` column check. The manager is a request-scoped
-     * singleton, so this caches the metadata round-trip for the request
-     * lifetime (the auto-install path runs its own independent check).
+     * How many protected accounts exist. More than one is a misconfiguration:
+     * identity resolution becomes ambiguous, so diagnostics report it.
      */
-    private function hasProtectedColumn(string $table): bool
+    public function protectedAccountCount(): int
     {
-        return $this->hasProtectedColumn ??= Schema::hasColumn($table, 'is_protected');
+        $model = $this->userModel();
+
+        if ($model === null) {
+            return 0;
+        }
+
+        /** @var Model $instance */
+        $instance = new $model;
+
+        if (! $this->hasProtectedColumn($instance)) {
+            return 0;
+        }
+
+        return $this->protectedQuery($model)->count();
+    }
+
+    /**
+     * @param  class-string<Model>  $model
+     * @return Builder<Model>
+     */
+    private function protectedQuery(string $model): Builder
+    {
+        return $model::query()->withoutGlobalScopes()->where('is_protected', true);
+    }
+
+    /**
+     * Memoized `is_protected` column check, keyed by connection + table. The
+     * manager is a container singleton — in a queue worker or a tenant switch
+     * it outlives a single request — so one cached boolean would answer for
+     * the wrong schema. The key carries the identity instead, and the check
+     * runs on the model's OWN connection rather than the default one.
+     */
+    private function hasProtectedColumn(Model $instance): bool
+    {
+        $connection = $instance->getConnectionName();
+        $table = $instance->getTable();
+
+        return $this->hasProtectedColumn[($connection ?? '').'.'.$table]
+            ??= Schema::connection($connection)->hasColumn($table, 'is_protected');
     }
 
     public function exists(): bool
@@ -262,11 +315,15 @@ final class SuperAdminManager
      *  - **With array** (seeder path / `ensure(['password' => 'X', ...])`):
      *    extracts `name`, `email`, `password` keys and force-applies them.
      *    Creates the user when missing; updates fields on the existing user
-     *    when present. Omitted keys fall back to package defaults on create
-     *    and are left unchanged on update (password specifically — supply
-     *    null/omit to keep the current hash).
+     *    when present. Keys that are OMITTED (not merely null) fall back to
+     *    package defaults on create and are left untouched on update — so a
+     *    password-only `ensure()` never rewrites the account's name or email.
      *
-     * @param  array{name?: string|null, email?: string|null, password?: string|null}|null  $defaults
+     *    The `adopt` key opts into claiming a pre-existing ordinary account
+     *    that already holds the target email. Without it that case is refused
+     *    (see install()).
+     *
+     * @param  array{name?: string|null, email?: string|null, password?: string|null, adopt?: bool}|null  $defaults
      */
     public function ensure(?array $defaults = null): Model
     {
@@ -280,26 +337,40 @@ final class SuperAdminManager
             return $this->install($this->defaultPassword(), $this->defaultEmail(), $this->defaultName());
         }
 
-        $password = $defaults['password'] ?? null;
-        $email = $defaults['email'] ?? null;
-        $name = $defaults['name'] ?? $this->defaultName();
-
-        return $this->install($password, $email, $name);
+        return $this->install(
+            $defaults['password'] ?? null,
+            $defaults['email'] ?? null,
+            array_key_exists('name', $defaults) ? $defaults['name'] : null,
+            (bool) ($defaults['adopt'] ?? false),
+        );
     }
 
     /**
      * Idempotently create or update the protected user.
      *
      * Null-handling rules:
-     *  - $email = null  → use defaultEmail() in all cases.
+     *  - $email = null:
+     *      • if creating a new user → use defaultEmail().
+     *      • if updating an existing user → KEEP the current email.
+     *  - $name = null:
+     *      • if creating a new user → use defaultName().
+     *      • if updating an existing user → KEEP the current name.
      *  - $password = null:
      *      • if creating a new user → use defaultPassword().
      *      • if updating an existing user → KEEP the current password
-     *        (lets callers like SetupCommand change just the email).
+     *        (lets callers change just the email).
+     *
+     * Adoption: when no protected account exists but an ORDINARY account
+     * already holds the target email, promoting it silently would hand the
+     * gate-bypassing root identity to whoever knows that account's existing
+     * password (and to any live "remember me" cookie it issued). That case is
+     * refused unless `$adopt` is passed — and an adoption always rotates the
+     * password and the remember token, so the previous owner's credentials
+     * cannot reach the promoted account.
      *
      * Sets is_protected = true and assigns the configured role if supported.
      */
-    public function install(?string $password = null, ?string $email = null, string $name = 'Super Admin'): Model
+    public function install(?string $password = null, ?string $email = null, ?string $name = null, bool $adopt = false): Model
     {
         $model = $this->userModel();
 
@@ -307,26 +378,36 @@ final class SuperAdminManager
             throw new \RuntimeException('Cannot resolve User model. Configure superadmin.user_model or auth.providers.users.model.');
         }
 
-        $email ??= $this->defaultEmail();
-        $email = mb_strtolower($email);
+        $email = $email !== null ? mb_strtolower($email) : null;
 
-        return $this->withoutProtection(function () use ($model, $email, $password, $name): Model {
-            // Prefer the protected row; fall back to claiming an existing
-            // (non-protected) account that already holds the target email —
-            // repairs hosts where a guarded model once dropped the flag, and
-            // avoids a unique-constraint crash on the insert below.
-            $existing = $this->user() ?? $this->findByEmail($model, $email);
+        return $this->withoutProtection(function () use ($model, $email, $password, $name, $adopt): Model {
+            $existing = $this->user();
+            $adopted = false;
 
-            $attributes = [
-                'name' => $name,
-                'email' => $email,
-                'is_protected' => true,
-            ];
+            if ($existing === null) {
+                // An ordinary account may already hold the address this install
+                // would create. Claiming it is a real repair path (a guarded
+                // model once dropped the flag) but it is never implicit.
+                $claimable = $this->findByEmail($model, $email ?? $this->defaultEmail());
+
+                if ($claimable !== null) {
+                    if (! $adopt) {
+                        throw ProtectedAccountException::cannotAdoptExistingAccount($email ?? $this->defaultEmail());
+                    }
+
+                    $existing = $claimable;
+                    $adopted = true;
+                }
+            }
+
+            $attributes = ['is_protected' => true];
 
             // forceFill throughout: this is the trusted provisioning path, and
             // hosts are *encouraged* to guard is_protected against mass
             // assignment — create()/fill() would silently drop the flag there.
             if ($existing === null) {
+                $attributes['name'] = $name ?? $this->defaultName();
+                $attributes['email'] = $email ?? $this->defaultEmail();
                 $attributes['password'] = Hash::make($password ?? $this->defaultPassword());
                 $attributes['email_verified_at'] = now();
 
@@ -335,9 +416,23 @@ final class SuperAdminManager
                 $instance->forceFill($attributes)->save();
                 $instance = $instance->fresh() ?? $instance;
             } else {
+                if ($name !== null) {
+                    $attributes['name'] = $name;
+                }
+                if ($email !== null) {
+                    $attributes['email'] = $email;
+                }
                 if ($password !== null) {
                     $attributes['password'] = Hash::make($password);
                 }
+
+                if ($adopted) {
+                    // Turning an ordinary account into the root identity: the
+                    // old password and any persistent login must stop working.
+                    $attributes['password'] = Hash::make($password ?? $this->defaultPassword());
+                    $attributes['remember_token'] = Str::random(60);
+                }
+
                 $existing->forceFill($attributes)->save();
                 $instance = $existing->fresh();
             }

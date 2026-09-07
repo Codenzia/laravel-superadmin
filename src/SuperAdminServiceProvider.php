@@ -278,6 +278,15 @@ final class SuperAdminServiceProvider extends ServiceProvider
      * (install / ensure / late role assignment) are always allowed to hold the
      * role. No-op without spatie/laravel-permission. Gated by
      * `superadmin.protection.prevent_role_promotion` (default true).
+     *
+     * KNOWN LIMIT — this is a post-write compensating guard, not a
+     * pre-authorization. It covers what Spatie itself writes and announces.
+     * A direct `$user->roles()->attach()`, raw SQL, a suppressed event bus, or
+     * another listener throwing before this one all bypass it, and a
+     * `syncRoles()` that is not wrapped in a transaction by the host leaves the
+     * other roles applied. Hosts that must forbid the promotion outright need
+     * their own authorization on the role-assignment action; this guard is
+     * defense in depth behind it.
      */
     private function registerRolePromotionGuard(): void
     {
@@ -326,20 +335,19 @@ final class SuperAdminServiceProvider extends ServiceProvider
                 return;
             }
 
-            $superAdminRoleId = $roleClass::query()->where('name', $configuredRole)->value('id');
-            if ($superAdminRoleId === null) {
+            $forbidden = $this->forbiddenRoleIds($roleClass, $configuredRole);
+
+            $attached = $this->attachedForbiddenRoleIds($event->rolesOrIds ?? [], $forbidden, $configuredRole);
+
+            if ($attached === []) {
                 return;
             }
 
-            if (! $this->attachedRolesInclude($event->rolesOrIds ?? [], $superAdminRoleId)) {
-                return;
-            }
-
-            // Undo the just-written privileged pivot row, then signal the
+            // Undo the just-written privileged pivot rows, then signal the
             // violation. Detaching does not re-enter this listener (only
             // attach fires RoleAttachedEvent).
             if (method_exists($user, 'roles')) {
-                $user->roles()->detach($superAdminRoleId);
+                $user->roles()->detach($attached);
                 $user->unsetRelation('roles');
             }
 
@@ -348,25 +356,70 @@ final class SuperAdminServiceProvider extends ServiceProvider
     }
 
     /**
-     * Whether the roles just attached (as reported by Spatie's
-     * RoleAttachedEvent — an array/Collection of ids or Role models) include
-     * the given super-admin role id.
+     * Every role row carrying the configured super-admin NAME, keyed by id
+     * with its `guard_name` as the value.
+     *
+     * Spatie legitimately allows the same role name under several guards, and
+     * `hasRole('super_admin')` matches the name whichever guard issued it — so
+     * resolving a single first-match id (the old `value('id')`) let an
+     * identically named role from another guard through while still granting
+     * the privilege. Every id bearing the name is forbidden, and the guard
+     * name is carried so the pair, not the bare id, is what identifies a row.
+     *
+     * @param  class-string<Model>  $roleClass
+     * @return array<string, string>
      */
-    private function attachedRolesInclude(mixed $rolesOrIds, int|string $superAdminRoleId): bool
+    private function forbiddenRoleIds(string $roleClass, string $configuredRole): array
+    {
+        $forbidden = [];
+
+        foreach ($roleClass::query()->where('name', $configuredRole)->get() as $role) {
+            $forbidden[(string) $role->getKey()] = (string) $role->getAttribute('guard_name');
+        }
+
+        return $forbidden;
+    }
+
+    /**
+     * The ids among the roles just attached (as reported by Spatie's
+     * RoleAttachedEvent — an array/Collection of ids or Role models) that
+     * carry the configured super-admin name.
+     *
+     * A payload item that is already a Role model is matched on its own
+     * name/guard pair, so a role created after $forbidden was read — or one
+     * belonging to a custom model outside that query — is still caught.
+     *
+     * @param  array<string, string>  $forbidden  role id => guard_name
+     * @return array<int, int|string>
+     */
+    private function attachedForbiddenRoleIds(mixed $rolesOrIds, array $forbidden, string $configuredRole): array
     {
         $items = $rolesOrIds instanceof Collection
             ? $rolesOrIds->all()
             : (array) $rolesOrIds;
 
-        foreach ($items as $item) {
-            $id = $item instanceof Model ? $item->getKey() : $item;
+        $matched = [];
 
-            if ((string) $id === (string) $superAdminRoleId) {
-                return true;
+        foreach ($items as $item) {
+            if ($item instanceof Model) {
+                $id = $item->getKey();
+                $name = $item->getAttribute('name');
+                $guard = (string) $item->getAttribute('guard_name');
+
+                if ($name === $configuredRole
+                    || (isset($forbidden[(string) $id]) && $forbidden[(string) $id] === $guard)) {
+                    $matched[] = $id;
+                }
+
+                continue;
+            }
+
+            if (isset($forbidden[(string) $item])) {
+                $matched[] = $item;
             }
         }
 
-        return false;
+        return $matched;
     }
 
     /**

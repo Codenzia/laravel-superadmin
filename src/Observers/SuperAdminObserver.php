@@ -58,5 +58,36 @@ final class SuperAdminObserver
                 throw ProtectedAccountException::cannotProtect();
             }
         }
+
+        $this->guardLockedAttributes($user);
+    }
+
+    /**
+     * Block writes to the protected account's credential attributes from
+     * anywhere but the package's own trusted provisioning / recovery paths.
+     *
+     * Hiding the password field in a Filament form is a UI affordance, not
+     * authorization: a host's custom "reset password" action, a bulk update or
+     * a service call writing the model directly would otherwise let any staff
+     * member set a password on the protected row and sign in as an identity
+     * that passes every gate.
+     *
+     * The list is `superadmin.protection.locked_attributes` — hosts that carry
+     * their own privileged columns (e.g. `status`, `user_type`) add them there,
+     * and setting it to `[]` restores the previous behavior.
+     */
+    private function guardLockedAttributes(Model $user): void
+    {
+        if (! (bool) $user->getOriginal('is_protected')) {
+            return;
+        }
+
+        $locked = (array) config('superadmin.protection.locked_attributes', []);
+
+        foreach ($locked as $attribute) {
+            if (is_string($attribute) && $attribute !== '' && $user->isDirty($attribute)) {
+                throw ProtectedAccountException::cannotChangeLockedAttribute($attribute);
+            }
+        }
     }
 }
