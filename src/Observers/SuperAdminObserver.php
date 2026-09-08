@@ -75,6 +75,11 @@ final class SuperAdminObserver
      * The list is `superadmin.protection.locked_attributes` — hosts that carry
      * their own privileged columns (e.g. `status`, `user_type`) add them there,
      * and setting it to `[]` restores the previous behavior.
+     *
+     * `remember_token` is intentionally not locked by default: Laravel itself
+     * cycles it on "remember me" login, logout and password reset, so guarding
+     * it locks the protected account out of those flows. A host that wants it
+     * guarded anyway lists it in the config, and this guard then applies.
      */
     private function guardLockedAttributes(Model $user): void
     {

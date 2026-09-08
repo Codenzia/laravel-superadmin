@@ -191,18 +191,19 @@ class User extends Authenticatable
 
 ### Locked credential attributes
 
-Filament's field auto-lock is a UI affordance, not authorization. A host's own "reset password" action, a bulk update or a direct service write reaches the model regardless. The observer therefore refuses any write to the protected account's `superadmin.protection.locked_attributes` (default `password`, `remember_token`) unless it comes through the package's trusted paths — `SuperAdmin::withoutProtection()`, `superadmin:ensure`, or the recovery route:
+Filament's field auto-lock is a UI affordance, not authorization. A host's own "reset password" action, a bulk update or a direct service write reaches the model regardless. The observer therefore refuses any write to the protected account's `superadmin.protection.locked_attributes` (default `password`) unless it comes through the package's trusted paths — `SuperAdmin::withoutProtection()`, `superadmin:ensure`, or the recovery route:
 
 ```php
 // config/superadmin.php
 'protection' => [
     'locked_attributes' => [
         'password',
-        'remember_token',
         'status', // add your own privileged columns
     ],
 ],
 ```
+
+`remember_token` is **not** locked by default. The framework owns its lifecycle — `Auth::login($user, remember: true)`, `Auth::logout()` and password resets all write it through the user provider — so locking it stops the protected account from signing in with "remember me" or through a social driver. The leaked-token risk it would cover is already mitigated by rotating the password, which invalidates every issued token. Add it to the list only if you accept losing those flows on the protected account.
 
 Set it to `[]` to keep the pre-0.7 behavior, where any Eloquent write could re-credential the protected row.
 

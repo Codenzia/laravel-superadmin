@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Codenzia\SuperAdmin\Exceptions\ProtectedAccountException;
 use Codenzia\SuperAdmin\Facades\SuperAdmin;
 use Codenzia\SuperAdmin\Tests\Fixtures\User;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 
 it('blocks deletion of the protected super admin', function (): void {
@@ -135,7 +136,31 @@ it('blocks a direct password write on the protected super admin', function (): v
     expect(Hash::check('original-password-123', $admin->fresh()->password))->toBeTrue();
 });
 
-it('blocks a remember_token write on the protected super admin', function (): void {
+it('lets the framework issue a remember token for the protected super admin', function (): void {
+    // Locking remember_token broke "remember me" and social login: Laravel
+    // cycles the column through the user provider on the way in.
+    $admin = createProtectedSuperAdmin();
+
+    Auth::login($admin, remember: true);
+
+    expect(Auth::id())->toBe($admin->getKey())
+        ->and($admin->fresh()->remember_token)->not->toBeEmpty();
+});
+
+it('lets the framework cycle the remember token on logout', function (): void {
+    $admin = createProtectedSuperAdmin();
+
+    Auth::login($admin, remember: true);
+    $issued = $admin->fresh()->remember_token;
+
+    Auth::logout();
+
+    expect($admin->fresh()->remember_token)->not->toBeEmpty()
+        ->and($admin->fresh()->remember_token)->not->toBe($issued);
+});
+
+it('blocks a remember_token write when the host locks it explicitly', function (): void {
+    config()->set('superadmin.protection.locked_attributes', ['password', 'remember_token']);
     $admin = createProtectedSuperAdmin();
 
     expect(fn () => $admin->forceFill(['remember_token' => 'attacker-token'])->save())

@@ -223,12 +223,20 @@ return [
         | update or a direct service write would otherwise let staff set a
         | password on the god account and sign in as it.
         |
+        | `remember_token` is deliberately NOT in this list. The framework owns
+        | that column's rotation — "remember me" login, logout and password
+        | reset all write it through the user provider — so locking it stops
+        | the protected account from signing in with "remember me" or through
+        | a social driver. The risk it would cover (a leaked remember token)
+        | is already mitigated by rotating the password, which invalidates
+        | every issued token. Add it below only if you accept losing those
+        | flows on the protected account.
+        |
         | Add your own privileged columns here (e.g. 'status', 'user_type').
         | Set to an empty array to turn the guard off.
         */
         'locked_attributes' => [
             'password',
-            'remember_token',
         ],
     ],
 
