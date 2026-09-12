@@ -105,12 +105,16 @@ final class SuperAdminPlugin implements Plugin
      * configureUsing hooks registered on parent classes to all subclasses
      * (it walks `class_parents` on construct), so registering this once on
      * `Action::class` covers every built-in and custom Action.
+     *
+     * Filament resolves a row record as `Model | array | null` — array-backed
+     * tables (`$table->records(...)`) hand the closure a plain array, so the
+     * parameter must accept one or every such table fatals on render.
      */
     private function configureNamedDestructiveActions(): void
     {
         Action::configureUsing(function (Action $action): void {
-            $action->hidden(function (?Model $record) use ($action): bool {
-                if ($record === null) {
+            $action->hidden(function (Model|array|null $record) use ($action): bool {
+                if (! $record instanceof Model) {
                     return false;
                 }
 
@@ -129,6 +133,9 @@ final class SuperAdminPlugin implements Plugin
      * Walk every form field at construction time. When the field's name
      * matches the configured locked-field allowlist AND the form record is
      * the super admin, disable it. Same `class_parents` walk as for actions.
+     *
+     * A schema record is `Model | array | null` too — a form fed from array
+     * state carries no model, and the closure must tolerate that.
      */
     private function configureLockedFormFields(): void
     {
@@ -137,8 +144,8 @@ final class SuperAdminPlugin implements Plugin
         }
 
         Field::configureUsing(function (Field $field): void {
-            $field->disabled(function (?Model $record) use ($field): bool {
-                if ($record === null) {
+            $field->disabled(function (Model|array|null $record) use ($field): bool {
+                if (! $record instanceof Model) {
                     return false;
                 }
 
@@ -155,6 +162,6 @@ final class SuperAdminPlugin implements Plugin
 
     private function isProtectedRecord(): Closure
     {
-        return fn (?Model $record): bool => $record !== null && SuperAdmin::is($record);
+        return fn (Model|array|null $record): bool => $record instanceof Model && SuperAdmin::is($record);
     }
 }

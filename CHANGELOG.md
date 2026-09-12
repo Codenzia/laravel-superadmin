@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-09-11
+
+### Fixed
+- **Array-backed Filament tables no longer fatal the page.** The panel plugin's global `configureUsing` hooks typed their record parameter `?Model`, but Filament resolves a record as `Model | array | null` — a table fed from `$table->records(...)` (or a schema given array state) hands the closure a plain array, and PHP threw `Argument #1 ($record) must be of type ?Illuminate\Database\Eloquent\Model, array given` while rendering. Because the hooks are registered on `Action::class` and `Field::class`, this took down every such table in every panel that registers the plugin, not just the one being viewed. The action-hide, force-delete and field-lock closures now accept `Model | array | null` and treat a non-model record as unprotected.
+
 ## [0.7.1] - 2026-09-08
 
 ### Fixed
@@ -264,7 +269,8 @@ Then replace any seeder calls to `SuperAdmin::install(...)` with `SuperAdmin::en
 
 Initial release.
 
-[Unreleased]: https://github.com/Codenzia/laravel-superadmin/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/Codenzia/laravel-superadmin/compare/v0.7.2...HEAD
+[0.7.2]: https://github.com/Codenzia/laravel-superadmin/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/Codenzia/laravel-superadmin/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/Codenzia/laravel-superadmin/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/Codenzia/laravel-superadmin/compare/v0.5.2...v0.6.0

@@ -184,3 +184,30 @@ it('respects app-extended hidden_action_names', function (): void {
 
     expect($action->isHidden())->toBeTrue();
 });
+
+/**
+ * Filament tables can be fed from arrays (`$table->records(...)`) instead of
+ * Eloquent — `Action::getRecord()` is declared `Model | array | null` and a
+ * schema record may be an array too. The plugin's global `configureUsing`
+ * hooks run on every action and field in the panel, so a `?Model` parameter
+ * would fatal the whole page the moment one of those tables renders.
+ */
+it('tolerates an array row record on a delete action', function (): void {
+    $action = DeleteAction::make()->record(['id' => 1, 'name' => 'array row']);
+
+    expect($action->isHidden())->toBeFalse();
+});
+
+it('tolerates an array row record on a named destructive action', function (): void {
+    $action = Action::make('suspend')->record(['id' => 1, 'name' => 'array row']);
+
+    expect($action->isHidden())->toBeFalse();
+});
+
+it('tolerates an array record on a locked form field', function (): void {
+    $field = TextInput::make('email');
+    $schema = Schema::make()->record(['id' => 1, 'email' => 'array@aqarkom.test'])->components([$field]);
+    $schema->getComponents(withActions: false, withHidden: true);
+
+    expect($field->isDisabled())->toBeFalse();
+});
