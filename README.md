@@ -205,6 +205,8 @@ Filament's field auto-lock is a UI affordance, not authorization. A host's own "
 
 `remember_token` is **not** locked by default. The framework owns its lifecycle — `Auth::login($user, remember: true)`, `Auth::logout()` and password resets all write it through the user provider — so locking it stops the protected account from signing in with "remember me" or through a social driver. The leaked-token risk it would cover is already mitigated by rotating the password, which invalidates every issued token. Add it to the list only if you accept losing those flows on the protected account.
 
+The framework's login-time password rehash is exempt (since 0.7.3). When `hashing.rehash_on_login` is on — Laravel's default — a successful login whose stored hash carries a different cost than the app's `BCRYPT_ROUNDS` makes the user provider re-store the same secret at the current cost. That is a write to `password`, so locking it kept the protected account from logging in at all whenever the cost drifted. The observer permits that single write: the auth password must be the only dirty attribute, the stored hash must have genuinely needed rehashing, the incoming value must be a finished hash that no longer does, and a user provider's `rehashPasswordIfRequired()` must be on the call stack. Nothing else is exempt — a host action writing a valid hash is still refused, even while the stored hash is stale.
+
 Set it to `[]` to keep the pre-0.7 behavior, where any Eloquent write could re-credential the protected row.
 
 Not covered, by design: raw SQL, and role *removal* (the protected account authorizes through `Gate::before`, so losing the role costs it nothing).

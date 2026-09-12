@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-09-12
+
+### Fixed
+- **The protected super admin can sign in again when its stored hash cost differs from `BCRYPT_ROUNDS`.** With `hashing.rehash_on_login` on (Laravel's default), a successful login whose stored hash was made under a different cost/algorithm makes `EloquentUserProvider::rehashPasswordIfRequired()` re-hash the very password just authenticated with and save the user. That write hit the `password` entry of `superadmin.protection.locked_attributes` introduced in 0.7.0, so the observer threw `ProtectedAccountException` **during login** and the account could not authenticate at all — the normal state of an account provisioned under one `.env` and served under another. The observer now permits that one write, and only it: the attribute must be the model's auth password, the only dirty attribute, the stored hash must genuinely have needed rehashing, the incoming value must be a finished hash that no longer does, and a user provider's `rehashPasswordIfRequired()` must be on the call stack. Present in 0.7.1 and 0.7.2.
+
+### Security
+- The exemption above re-stores the secret the user just authenticated with, so it changes no credential. Every other write to a locked attribute stays refused, **including a valid-looking password write made while the stored hash is stale** — the stack check is what separates the framework's re-store from a host "reset password" action, a bulk update or a direct service write, since the plaintext never reaches the observer. `remember_token` behaviour is unchanged.
+
+### Upgrade notes
+- No code or config change is required. If the protected account has been unable to log in on an app running 0.7.0–0.7.2, cost drift is the likely cause: compare the app's `BCRYPT_ROUNDS` (or `hashing.bcrypt.rounds`) with the cost embedded in the stored hash — the `$2y$<cost>$` prefix of `users.password` — and note that the first successful login after this upgrade rewrites the hash at the app's current cost. Apps that worked around the lockout by setting `superadmin.protection.locked_attributes` to `[]` should restore the default `['password']`, which is what re-arms the guard.
+
 ## [0.7.2] - 2026-09-11
 
 ### Fixed
@@ -269,7 +280,8 @@ Then replace any seeder calls to `SuperAdmin::install(...)` with `SuperAdmin::en
 
 Initial release.
 
-[Unreleased]: https://github.com/Codenzia/laravel-superadmin/compare/v0.7.2...HEAD
+[Unreleased]: https://github.com/Codenzia/laravel-superadmin/compare/v0.7.3...HEAD
+[0.7.3]: https://github.com/Codenzia/laravel-superadmin/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/Codenzia/laravel-superadmin/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/Codenzia/laravel-superadmin/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/Codenzia/laravel-superadmin/compare/v0.6.0...v0.7.0

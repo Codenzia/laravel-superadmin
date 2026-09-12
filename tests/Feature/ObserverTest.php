@@ -191,3 +191,59 @@ it('honors an empty locked_attributes list', function (): void {
 
     expect(Hash::check('host-managed-pw', $admin->fresh()->password))->toBeTrue();
 });
+
+it('lets the framework rehash the protected super admin password on login when the cost drifted', function (): void {
+    // The lockout this closes: an account provisioned under a different
+    // BCRYPT_ROUNDS could not sign in at all, because Laravel's rehash-on-login
+    // re-stores the same secret at the app's current cost and that write hit
+    // the password lock.
+    config()->set('hashing.bcrypt.rounds', 12);
+    Hash::forgetDrivers();
+
+    $admin = createProtectedSuperAdmin(password: 'cost-drift-pw-12345');
+    $stale = password_hash('cost-drift-pw-12345', PASSWORD_BCRYPT, ['cost' => 4]);
+
+    SuperAdmin::withoutProtection(fn () => $admin->forceFill(['password' => $stale])->save());
+
+    expect(Hash::needsRehash($admin->fresh()->password))->toBeTrue();
+
+    expect(Auth::attempt(['email' => $admin->email, 'password' => 'cost-drift-pw-12345']))->toBeTrue();
+
+    $stored = $admin->fresh()->password;
+
+    expect($stored)->not->toBe($stale)
+        ->and(Hash::needsRehash($stored))->toBeFalse()
+        ->and(Hash::check('cost-drift-pw-12345', $stored))->toBeTrue();
+});
+
+it('still refuses an arbitrary password write on the protected super admin when the stored hash is stale', function (): void {
+    // A stale hash must not become a window: only the framework's own rehash
+    // path is exempt, never a host action that happens to write a valid hash.
+    config()->set('hashing.bcrypt.rounds', 12);
+    Hash::forgetDrivers();
+
+    $admin = createProtectedSuperAdmin(password: 'original-password-123');
+    $stale = password_hash('original-password-123', PASSWORD_BCRYPT, ['cost' => 4]);
+
+    SuperAdmin::withoutProtection(fn () => $admin->forceFill(['password' => $stale])->save());
+
+    expect(fn () => $admin->forceFill(['password' => Hash::make('attacker-chosen-pw')])->save())
+        ->toThrow(ProtectedAccountException::class);
+
+    expect($admin->fresh()->password)->toBe($stale);
+});
+
+it('rehashes and issues a remember token on the same login', function (): void {
+    config()->set('hashing.bcrypt.rounds', 12);
+    Hash::forgetDrivers();
+
+    $admin = createProtectedSuperAdmin(password: 'cost-drift-pw-12345');
+    $stale = password_hash('cost-drift-pw-12345', PASSWORD_BCRYPT, ['cost' => 4]);
+
+    SuperAdmin::withoutProtection(fn () => $admin->forceFill(['password' => $stale])->save());
+
+    expect(Auth::attempt(['email' => $admin->email, 'password' => 'cost-drift-pw-12345'], remember: true))->toBeTrue();
+
+    expect(Hash::needsRehash($admin->fresh()->password))->toBeFalse()
+        ->and($admin->fresh()->remember_token)->not->toBeEmpty();
+});
