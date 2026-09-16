@@ -1,0 +1,44 @@
+name: Cut release
+
+# Release button. Actions tab -> "Cut release" -> pick the branch and a bump
+# (or type an exact version). The reusable workflow computes the next v* tag
+# from this repo's latest tag, refuses if tests are not green on that commit,
+# then creates and pushes the annotated tag. The tag push fires the
+# tag-triggered workflows here (release / Notify Satis on tag), which is what
+# publishes the version.
+#
+# Before pressing it: move the CHANGELOG [Unreleased] notes under the version.
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Release type (used when 'version' is blank)"
+        required: false
+        type: choice
+        default: patch
+        options:
+          - patch
+          - minor
+          - major
+      version:
+        description: "Exact version override, e.g. 0.4.0 (leave blank to use the bump above)"
+        required: false
+        type: string
+        default: ""
+
+jobs:
+  tag:
+    # The called workflow reads Actions (green-tests gate) and the tree. A
+    # called workflow cannot request more than the caller grants, and the
+    # repo default token may be contents-only — omitting this makes GitHub
+    # reject the run at startup (startup_failure, no jobs).
+    permissions:
+      contents: read
+      actions: read
+    uses: Codenzia/plugin-runtime/.github/workflows/plugin-tag.yml@v1.3.0
+    with:
+      bump: ${{ inputs.bump }}
+      version: ${{ inputs.version }}
+      branch: ${{ github.ref_name }}
+    secrets: inherit
