@@ -15,7 +15,9 @@ concurrency:
 
 jobs:
   tests:
-    uses: Codenzia/plugin-runtime/.github/workflows/plugin-tests.yml@v1.2.2
+    uses: Codenzia/plugin-runtime/.github/workflows/plugin-tests.yml@v1.4.0
+    with:
+      database: mysql
     # Composer needs CODENZIA_PAT + SATIS_USER/SATIS_PASS to resolve the
     # in-house codenzia/* dependencies from packages.codenzia.com.
     secrets: inherit
